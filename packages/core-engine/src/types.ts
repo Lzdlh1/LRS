@@ -62,12 +62,16 @@ export interface ChiefState {
   signupAnswered: SeatId[];
   /** 退水名单 */
   withdrawn: SeatId[];
+  /** 退水阶段尚待询问的座位 */
+  withdrawQueue: SeatId[];
   /** 1 = 首轮；2 = PK 轮 */
   round: 1 | 2;
   /** 进入 PK 的平票者 */
   tied: SeatId[];
   /** 已提交的竞选票 */
   votes: { seat: SeatId; target: SeatId }[];
+  /** PK 轮的投票人（平票者不能投票），仅在 round = 2 时使用 */
+  votersCache: SeatId[];
 }
 
 export interface VoteState {
@@ -114,6 +118,13 @@ export interface GameState {
   speech: SpeechState;
   lastWordsQueue: SeatId[];
   hunterQueue: SeatId[];
+  /**
+   * 死亡结算完毕后还要回到哪个场景：
+   * dawn = 天亮结算（接下来是白天发言）；day = 白天投票结算（接下来进入下一夜）
+   */
+  resolutionStage: 'dawn' | 'day';
+  /** 死亡的警长若尚未决定警徽去向，这里记着他是谁 */
+  pendingChiefTransfer: SeatId | null;
   pending: PendingRequest | null;
   winner: Camp | null;
 }

@@ -95,3 +95,74 @@ export function chiefSignupOptions(): ActionOption[] {
     },
   ];
 }
+
+/** 退水：退水者失去被选举权，同时也失去警下投票权 */
+export function chiefWithdrawOptions(): ActionOption[] {
+  return [
+    {
+      kind: 'chief_withdraw',
+      targets: [],
+      params: { withdraw: [true, false] },
+      label: '是否退水（退水后不再参选，也不能投票）',
+    },
+  ];
+}
+
+/** 警徽转移：移交给一名存活玩家，或撕毁警徽 */
+export function chiefTransferOptions(state: GameState, chiefSeat: SeatId): ActionOption[] {
+  return [
+    {
+      kind: 'chief_transfer',
+      targets: aliveSeats(state).filter((seat) => seat !== chiefSeat),
+      params: { allowDestroy: [true] },
+      label: '移交警徽给一名存活玩家，或撕毁警徽',
+    },
+  ];
+}
+
+/** 竞选投票：只能投给仍在竞选的人 */
+export function chiefVoteOptions(candidates: SeatId[]): ActionOption[] {
+  return [{ kind: 'vote', targets: candidates, label: '投票给一名竞选者' }];
+}
+
+/** 发言 */
+export function speakOptions(label: string): ActionOption[] {
+  return [{ kind: 'speak', targets: [], label }];
+}
+
+/**
+ * 放逐投票。
+ * - 首轮：可选任意其他存活玩家，也可弃票
+ * - PK 轮：只能投 PK 台上的候选者，不能弃票
+ */
+export function dayVoteOptions(state: GameState, voterSeat: SeatId, pkCandidates?: SeatId[]): ActionOption[] {
+  if (pkCandidates) {
+    return [
+      {
+        kind: 'vote',
+        targets: pkCandidates.filter((seat) => seat !== voterSeat),
+        label: '在 PK 的两人中选一个',
+      },
+    ];
+  }
+  return [
+    {
+      kind: 'vote',
+      targets: aliveSeats(state).filter((seat) => seat !== voterSeat),
+      params: { allowAbstain: [true] },
+      label: '投票放逐一名玩家（也可弃票）',
+    },
+  ];
+}
+
+/** 猎人开枪：可带走任意存活玩家，也可放弃 */
+export function hunterShootOptions(state: GameState, hunterSeat: SeatId): ActionOption[] {
+  return [
+    {
+      kind: 'hunter_shoot',
+      targets: aliveSeats(state).filter((seat) => seat !== hunterSeat),
+      params: { allowPass: [true] },
+      label: '开枪带走一名玩家，或放弃开枪',
+    },
+  ];
+}

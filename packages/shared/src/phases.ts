@@ -29,6 +29,7 @@ export const PHASES = [
 
   // 天亮结算
   'DAWN_ANNOUNCE',
+  'CHIEF_TRANSFER',
   'LAST_WORDS',
   'HUNTER_SHOOT',
 

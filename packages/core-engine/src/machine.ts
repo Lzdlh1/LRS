@@ -1,21 +1,31 @@
 import {
+  isGodRole,
   isNightPhase,
   roleCamp,
   type Action,
+  type Camp,
   type GameEvent,
   type Phase,
   type SeatId,
   type SpeechContext,
+  type VoteTarget,
 } from '@lrs/shared';
 import { buildRoleDeck, DEFAULT_BOARD, validateBoard, type Board } from './board.ts';
 import { emit, seatsVisible } from './events.ts';
 import {
+  aliveSeats,
   chiefSignupOptions,
+  chiefTransferOptions,
+  chiefVoteOptions,
+  chiefWithdrawOptions,
+  dayVoteOptions,
   guardOptions,
+  hunterShootOptions,
   onBoardSeats,
   playerAt,
   seerOptions,
   seatsWithRole,
+  speakOptions,
   wolfOptions,
   witchOptions,
 } from './options.ts';
@@ -32,7 +42,7 @@ import type {
 } from './types.ts';
 
 /** 状态机单次推进的步数上限，防止规则写错导致死循环 */
-const MAX_DRIVE_STEPS = 500;
+const MAX_DRIVE_STEPS = 2000;
 
 // ────────────────────────────── 初始状态 ──────────────────────────────
 
@@ -56,14 +66,20 @@ function emptyChief(): ChiefState {
     candidates: [],
     signupAnswered: [],
     withdrawn: [],
+    withdrawQueue: [],
     round: 1,
     tied: [],
     votes: [],
+    votersCache: [],
   };
 }
 
 function emptyVote(): VoteState {
   return { round: 1, voters: [], votes: [], tied: [] };
+}
+
+function emptySpeech(): GameState['speech'] {
+  return { context: 'day', queue: [], spoken: [] };
 }
 
 function shuffle<T>(items: T[], rng: () => number): T[] {
@@ -124,9 +140,11 @@ export function createGame(config: EngineConfig = {}): StepResult {
     lastNightGuardTarget: null,
     chief: emptyChief(),
     vote: emptyVote(),
-    speech: { context: 'day', queue: [], spoken: [] },
+    speech: emptySpeech(),
     lastWordsQueue: [],
     hunterQueue: [],
+    resolutionStage: 'dawn',
+    pendingChiefTransfer: null,
     pending: null,
     winner: null,
   };
@@ -157,25 +175,23 @@ export function createGame(config: EngineConfig = {}): StepResult {
   return { state, events };
 }
 
-// ────────────────────────────── 对外推进接口 ──────────────────────────────
+// ────────────────────────────── 对外接口 ──────────────────────────────
 
 /**
  * 提交一个 Action。
  *
- * 非法 Action 不会抛异常，而是产出一条 action_rejected 事件并保持状态不变 ——
- * 这样 AI 说错话 / 提交垃圾数据时，整局游戏不会崩。
+ * 非法 Action 不抛异常，而是产出 action_rejected 事件并保持状态不变 ——
+ * AI 提交垃圾数据时整局游戏不会崩。
  */
 export function step(prev: GameState, action: Action): StepResult {
   const state = structuredClone(prev) as GameState;
   const events: GameEvent[] = [];
 
-  const applied = tryApplyAction(state, events, action);
-  if (applied) drive(state, events);
+  if (tryApplyAction(state, events, action)) drive(state, events);
 
   return { state, events };
 }
 
-/** 当前在等谁做什么 */
 export function pendingRequest(state: GameState): PendingRequest | null {
   return state.pending;
 }
@@ -188,7 +204,9 @@ export function isOver(state: GameState): boolean {
 
 function drive(state: GameState, events: GameEvent[]): void {
   let steps = 0;
-  while (state.winner === null && state.pending === null) {
+  // 用「阶段是否已到 GAME_OVER」作为终止条件，而不是 winner ——
+  // 因为 winner 可能在结算途中就被置上，此时还需要走完公布与结算流程。
+  while (state.phase !== 'GAME_OVER' && state.pending === null) {
     steps += 1;
     if (steps > MAX_DRIVE_STEPS) {
       throw new Error(`状态机推进超过 ${MAX_DRIVE_STEPS} 步，疑似死循环（当前阶段 ${state.phase}）`);
@@ -197,10 +215,9 @@ function drive(state: GameState, events: GameEvent[]): void {
   }
 }
 
-function goTo(state: GameState, events: GameEvent[], phase: Phase, lastWordsQueue: SeatId[] = []): void {
+function goTo(state: GameState, events: GameEvent[], phase: Phase): void {
   const from = state.phase;
   state.phase = phase;
-  state.lastWordsQueue = lastWordsQueue;
   emit(state, events, { t: 'phase_changed', from, to: phase });
 }
 
@@ -214,20 +231,42 @@ function advanceOnce(state: GameState, events: GameEvent[]): void {
       return phaseNightWitch(state, events);
     case 'NIGHT_SEER':
       return phaseNightSeer(state, events);
-    case 'DAWN_ANNOUNCE':
-      return phaseDawnAnnounce(state, events);
     case 'CHIEF_SIGNUP':
       return phaseChiefSignup(state, events);
+    case 'CHIEF_SPEECH':
+      return phaseChiefSpeech(state, events);
+    case 'CHIEF_WITHDRAW':
+      return phaseChiefWithdraw(state, events);
+    case 'CHIEF_VOTE':
+    case 'CHIEF_PK_VOTE':
+      return phaseChiefVote(state, events);
+    case 'CHIEF_PK_SPEECH':
+      return phaseChiefPkSpeech(state, events);
+    case 'DAWN_ANNOUNCE':
+      return phaseDawnAnnounce(state, events);
+    case 'CHIEF_TRANSFER':
+      return phaseChiefTransfer(state, events);
+    case 'LAST_WORDS':
+      return phaseLastWords(state, events);
+    case 'HUNTER_SHOOT':
+      return phaseHunterShoot(state, events);
+    case 'DAY_SPEECH':
+      return phaseDaySpeech(state, events);
+    case 'DAY_VOTE':
+    case 'DAY_PK_VOTE':
+      return phaseDayVote(state, events);
+    case 'DAY_PK_SPEECH':
+      return phaseDayPkSpeech(state, events);
     default:
-      throw new Error(`阶段 ${state.phase} 尚未实现`);
+      throw new Error(`阶段 ${state.phase} 没有对应的处理函数`);
   }
 }
-
-// ────────────────────────────── 夜晚 ──────────────────────────────
 
 function ask(state: GameState, seat: SeatId, options: PendingRequest['options'], deadlineMs: number): void {
   state.pending = { seat, options, deadlineMs };
 }
+
+// ────────────────────────────── 夜晚 ──────────────────────────────
 
 function phaseNightGuard(state: GameState, events: GameEvent[]): void {
   const [guard] = seatsWithRole(state, 'guard');
@@ -248,12 +287,7 @@ function phaseNightWitch(state: GameState, events: GameEvent[]): void {
 
   // 解药用光后，女巫不再被告知今夜谁被刀
   const informedKilled = state.witchPotions.antidote > 0 ? state.night.wolfTarget : null;
-  emit(
-    state,
-    events,
-    { t: 'witch_night_info', seat: witch, killed: informedKilled },
-    seatsVisible(witch),
-  );
+  emit(state, events, { t: 'witch_night_info', seat: witch, killed: informedKilled }, seatsVisible(witch));
   ask(state, witch, witchOptions(state, witch), state.rules.timeoutMs.night);
 }
 
@@ -263,7 +297,11 @@ function phaseNightSeer(state: GameState, events: GameEvent[]): void {
     ask(state, seer, seerOptions(state, seer), state.rules.timeoutMs.night);
     return;
   }
+
   resolveNight(state);
+
+  // 狼刀在先：胜负已定，就不必再走警长竞选，直接公布死讯并结算
+  if (state.winner !== null) return goTo(state, events, 'DAWN_ANNOUNCE');
 
   if (state.day === 1 && state.board.hasChiefElection && state.rules.chiefElectionBeforeDawnAnnounce) {
     return goTo(state, events, 'CHIEF_SIGNUP');
@@ -272,47 +310,208 @@ function phaseNightSeer(state: GameState, events: GameEvent[]): void {
 }
 
 /**
- * 夜晚结算。只计算死亡、写入 player.death，不公布死讯 ——
- * 公布发生在 DAWN_ANNOUNCE，因为变体 A 下警长竞选要排在公布之前。
+ * 夜晚结算。只计算死亡并写入 player.death，**不公布死讯** ——
+ * 公布发生在 DAWN_ANNOUNCE，因为变体 A 下警长竞选排在公布之前。
  */
 function resolveNight(state: GameState): void {
   const { wolfTarget, guardTarget, witchSaved, witchPoisoned } = state.night;
-  const deaths = new Map<SeatId, 'wolf' | 'poison'>();
 
   if (wolfTarget !== null) {
     const guarded = guardTarget === wolfTarget;
     const saved = witchSaved === wolfTarget;
     const dies = guarded && saved ? state.rules.guardedAndSavedDies : !(guarded || saved);
-    if (dies) deaths.set(wolfTarget, 'wolf');
+    if (dies) playerAt(state, wolfTarget).death = { cause: 'wolf', day: state.day };
   }
+
+  // 狼刀在先：狼当夜达成胜利条件时直接判狼胜，后手的毒杀不改变结果
+  const wolfVictory = state.rules.wolfKillTakesPriority ? checkWinner(state) : null;
 
   if (witchPoisoned !== null) {
-    // 被毒优先记为 poison —— 这决定猎人能否开枪（被毒死不能开枪）
-    deaths.set(witchPoisoned, 'poison');
+    // 记为 poison —— 这决定猎人能否开枪（被毒死不能开枪）
+    playerAt(state, witchPoisoned).death = { cause: 'poison', day: state.day };
   }
 
-  for (const [seat, cause] of deaths) {
-    playerAt(state, seat).death = { cause, day: state.day };
-  }
-
-  state.night.deaths = [...deaths.keys()];
+  state.winner = wolfVictory ?? checkWinner(state);
+  state.night.deaths = state.players.filter((p) => p.death?.day === state.day).map((p) => p.seat);
   state.lastNightGuardTarget = state.night.guardTarget;
 }
 
-// ────────────────────────────── 天亮 ──────────────────────────────
+// ────────────────────────────── 警长竞选 ──────────────────────────────
+
+/** 仍在竞选的候选者 */
+function activeCandidates(state: GameState): SeatId[] {
+  return state.chief.candidates.filter((seat) => !state.chief.withdrawn.includes(seat));
+}
+
+/** 警下玩家：没上警的人才有投票权。变体 A 下首夜死者在死讯公布前也在此列。 */
+function chiefVoters(state: GameState): SeatId[] {
+  return onBoardSeats(state).filter((seat) => !state.chief.candidates.includes(seat));
+}
+
+function phaseChiefSignup(state: GameState, events: GameEvent[]): void {
+  const next = onBoardSeats(state).find((seat) => !state.chief.signupAnswered.includes(seat));
+  if (next !== undefined) {
+    ask(state, next, chiefSignupOptions(), state.rules.timeoutMs.chiefSignup);
+    return;
+  }
+
+  const active = activeCandidates(state);
+  if (active.length > 1) {
+    state.speech.queue = [...active];
+    return goTo(state, events, 'CHIEF_SPEECH');
+  }
+  if (active.length === 1) return electChief(state, events, active[0]!);
+  noChief(state, events);
+}
+
+function phaseChiefSpeech(state: GameState, events: GameEvent[]): void {
+  const speaker = state.speech.queue[0];
+  if (speaker !== undefined) {
+    ask(state, speaker, speakOptions('竞选发言'), state.rules.timeoutMs.chiefSpeech);
+    return;
+  }
+  state.chief.withdrawQueue = [...activeCandidates(state)];
+  goTo(state, events, 'CHIEF_WITHDRAW');
+}
+
+function phaseChiefWithdraw(state: GameState, events: GameEvent[]): void {
+  const next = state.chief.withdrawQueue[0];
+  if (next !== undefined) {
+    ask(state, next, chiefWithdrawOptions(), state.rules.timeoutMs.chiefSignup);
+    return;
+  }
+
+  const active = activeCandidates(state);
+  if (active.length > 1) {
+    state.chief.votes = [];
+    return goTo(state, events, 'CHIEF_VOTE');
+  }
+  if (active.length === 1) return electChief(state, events, active[0]!);
+  noChief(state, events);
+}
+
+function phaseChiefVote(state: GameState, events: GameEvent[]): void {
+  const active = activeCandidates(state);
+  const voters = state.chief.round === 1 ? chiefVoters(state) : state.chief.votersCache;
+
+  const remaining = voters.filter((seat) => !state.chief.votes.some((v) => v.seat === seat));
+  if (remaining.length > 0) {
+    ask(state, remaining[0]!, chiefVoteOptions(active), state.rules.timeoutMs.chiefVote);
+    return;
+  }
+
+  const { counts, top } = tally(state.chief.votes, () => 1);
+
+  if (top.length === 1) {
+    emit(state, events, { t: 'chief_vote_tally', counts, elected: top[0]!, tie: false });
+    return electChief(state, events, top[0]!);
+  }
+
+  if (top.length > 1 && state.chief.round === 1) {
+    state.chief.round = 2;
+    state.chief.tied = top;
+    state.chief.votes = [];
+    state.speech.queue = [...top];
+    emit(state, events, { t: 'chief_vote_tally', counts, elected: null, tie: true });
+    return goTo(state, events, 'CHIEF_PK_SPEECH');
+  }
+
+  // 再次平票 → 警徽流失
+  emit(state, events, { t: 'chief_vote_tally', counts, elected: null, tie: top.length > 1 });
+  noChief(state, events);
+}
+
+function phaseChiefPkSpeech(state: GameState, events: GameEvent[]): void {
+  const speaker = state.speech.queue[0];
+  if (speaker !== undefined) {
+    ask(state, speaker, speakOptions('PK 发言'), state.rules.timeoutMs.chiefSpeech);
+    return;
+  }
+  // 平票者不能投票
+  state.chief.votersCache = chiefVoters(state).filter((seat) => !state.chief.tied.includes(seat));
+  state.chief.votes = [];
+  goTo(state, events, 'CHIEF_PK_VOTE');
+}
+
+function electChief(state: GameState, events: GameEvent[], seat: SeatId): void {
+  setChief(state, seat);
+  goTo(state, events, 'DAWN_ANNOUNCE');
+}
+
+function noChief(state: GameState, events: GameEvent[]): void {
+  state.chief.badgeAlive = false;
+  setChief(state, null);
+  goTo(state, events, 'DAWN_ANNOUNCE');
+}
+
+function setChief(state: GameState, seat: SeatId | null): void {
+  state.chief.elected = seat;
+  for (const player of state.players) player.isChief = player.seat === seat;
+}
+
+// ────────────────────────────── 天亮结算 ──────────────────────────────
 
 function phaseDawnAnnounce(state: GameState, events: GameEvent[]): void {
-  const unannounced = state.players.filter((p) => p.death !== null && !p.deathAnnounced);
+  state.resolutionStage = 'dawn';
 
+  const unannounced = state.players.filter((p) => p.death !== null && !p.deathAnnounced);
   for (const player of unannounced) {
     player.deathAnnounced = true;
     emit(state, events, { t: 'died', seat: player.seat, cause: player.death!.cause });
+    if (player.isChief && state.chief.badgeAlive) state.pendingChiefTransfer = player.seat;
   }
 
-  const lastWords = unannounced.filter((p) => shouldHaveLastWords(state, p)).map((p) => p.seat);
-  state.hunterQueue = unannounced.filter((p) => canHunterShoot(state, p)).map((p) => p.seat);
+  if (state.winner !== null) return finishGame(state, events, state.winner);
 
-  goTo(state, events, lastWords.length > 0 ? 'LAST_WORDS' : 'DAY_SPEECH', lastWords);
+  state.lastWordsQueue = unannounced.filter((p) => shouldHaveLastWords(state, p)).map((p) => p.seat);
+  state.hunterQueue = unannounced.filter((p) => canHunterShoot(state, p)).map((p) => p.seat);
+  proceedAfterDeaths(state, events);
+}
+
+/**
+ * 死亡结算之后的统一推进：先处理警徽去向，再遗言，再猎人开枪，最后回到场景。
+ * 所有分支都汇聚到这里，避免各处重复写顺序。
+ */
+function proceedAfterDeaths(state: GameState, events: GameEvent[]): void {
+  if (state.pendingChiefTransfer !== null) return goTo(state, events, 'CHIEF_TRANSFER');
+  if (state.lastWordsQueue.length > 0) return goTo(state, events, 'LAST_WORDS');
+  if (state.hunterQueue.length > 0) return goTo(state, events, 'HUNTER_SHOOT');
+  finishAftermath(state, events);
+}
+
+function finishAftermath(state: GameState, events: GameEvent[]): void {
+  const winner = checkWinner(state);
+  if (winner !== null) return finishGame(state, events, winner);
+
+  if (state.resolutionStage === 'dawn') {
+    state.speech = emptySpeech();
+    state.speech.queue = speechOrder(state);
+    if (state.speech.queue.length === 0) {
+      state.vote = { round: 1, voters: aliveSeats(state), votes: [], tied: [] };
+      return goTo(state, events, 'DAY_VOTE');
+    }
+    return goTo(state, events, 'DAY_SPEECH');
+  }
+
+  enterNight(state, events);
+}
+
+function phaseChiefTransfer(state: GameState, events: GameEvent[]): void {
+  const chiefSeat = state.pendingChiefTransfer;
+  if (chiefSeat === null) return proceedAfterDeaths(state, events);
+  ask(state, chiefSeat, chiefTransferOptions(state, chiefSeat), state.rules.timeoutMs.lastWords);
+}
+
+function phaseLastWords(state: GameState, events: GameEvent[]): void {
+  const seat = state.lastWordsQueue[0];
+  if (seat === undefined) return proceedAfterDeaths(state, events);
+  ask(state, seat, speakOptions('发表遗言'), state.rules.timeoutMs.lastWords);
+}
+
+function phaseHunterShoot(state: GameState, events: GameEvent[]): void {
+  const seat = state.hunterQueue[0];
+  if (seat === undefined) return proceedAfterDeaths(state, events);
+  ask(state, seat, hunterShootOptions(state, seat), state.rules.timeoutMs.hunterShoot);
 }
 
 function shouldHaveLastWords(state: GameState, player: PlayerState): boolean {
@@ -338,24 +537,144 @@ function canHunterShoot(state: GameState, player: PlayerState): boolean {
   return true;
 }
 
-// ────────────────────────────── 警长竞选 ──────────────────────────────
+// ────────────────────────────── 白天 ──────────────────────────────
 
-function phaseChiefSignup(state: GameState, events: GameEvent[]): void {
-  const next = onBoardSeats(state).find((seat) => !state.chief.signupAnswered.includes(seat));
-  if (next === undefined) {
-    goTo(state, events, 'CHIEF_SPEECH');
+/** 发言顺序：从警长下一位开始顺时针，警长最后；无警长则从最小座位号开始 */
+function speechOrder(state: GameState): SeatId[] {
+  const alive = aliveSeats(state);
+  const chief = state.players.find((p) => p.isChief && p.death === null)?.seat;
+  if (chief === undefined) return alive;
+  return [...alive.filter((seat) => seat > chief), ...alive.filter((seat) => seat < chief), chief];
+}
+
+function phaseDaySpeech(state: GameState, events: GameEvent[]): void {
+  const speaker = state.speech.queue[0];
+  if (speaker !== undefined) {
+    ask(state, speaker, speakOptions('发表发言'), state.rules.timeoutMs.daySpeech);
     return;
   }
-  ask(state, next, chiefSignupOptions(), state.rules.timeoutMs.chiefSignup);
+  state.vote = { round: 1, voters: aliveSeats(state), votes: [], tied: [] };
+  goTo(state, events, 'DAY_VOTE');
+}
+
+function phaseDayVote(state: GameState, events: GameEvent[]): void {
+  if (state.vote.round === 1 && state.vote.voters.length === 0) {
+    state.vote = { round: 1, voters: aliveSeats(state), votes: [], tied: [] };
+  }
+
+  const remaining = state.vote.voters.filter((seat) => !state.vote.votes.some((v) => v.seat === seat));
+  if (remaining.length > 0) {
+    const pk = state.vote.round === 2 ? state.vote.tied : undefined;
+    ask(state, remaining[0]!, dayVoteOptions(state, remaining[0]!, pk), state.rules.timeoutMs.dayVote);
+    return;
+  }
+
+  const { counts, top } = tally(state.vote.votes, (seat) =>
+    playerAt(state, seat).isChief ? state.rules.chiefVoteWeight : 1,
+  );
+
+  if (top.length === 1) {
+    emit(state, events, { t: 'vote_tally', counts, eliminated: top[0]!, tie: false });
+    return eliminateByVote(state, events, top[0]!);
+  }
+
+  if (top.length > 1 && state.vote.round === 1) {
+    state.vote.round = 2;
+    state.vote.tied = top;
+    state.vote.voters = aliveSeats(state).filter((seat) => !top.includes(seat));
+    state.vote.votes = [];
+    state.speech.queue = [...top];
+    emit(state, events, { t: 'vote_tally', counts, eliminated: null, tie: true });
+    return goTo(state, events, 'DAY_PK_SPEECH');
+  }
+
+  // 无人出局（含 PK 再次平票、全员弃票）
+  emit(state, events, { t: 'vote_tally', counts, eliminated: null, tie: top.length > 1 });
+  state.resolutionStage = 'day';
+  proceedAfterDeaths(state, events);
+}
+
+function phaseDayPkSpeech(state: GameState, events: GameEvent[]): void {
+  const speaker = state.speech.queue[0];
+  if (speaker !== undefined) {
+    ask(state, speaker, speakOptions('PK 发言'), state.rules.timeoutMs.daySpeech);
+    return;
+  }
+  goTo(state, events, 'DAY_PK_VOTE');
+}
+
+function eliminateByVote(state: GameState, events: GameEvent[], seat: SeatId): void {
+  const player = playerAt(state, seat);
+  player.death = { cause: 'vote', day: state.day };
+  player.deathAnnounced = true;
+  emit(state, events, { t: 'died', seat, cause: 'vote' });
+
+  if (player.isChief && state.chief.badgeAlive) state.pendingChiefTransfer = seat;
+
+  state.resolutionStage = 'day';
+  state.lastWordsQueue = shouldHaveLastWords(state, player) ? [seat] : [];
+  state.hunterQueue = canHunterShoot(state, player) ? [seat] : [];
+  proceedAfterDeaths(state, events);
+}
+
+// ────────────────────────────── 胜负与夜循环 ──────────────────────────────
+
+function checkWinner(state: GameState): Camp | null {
+  const alive = state.players.filter((p) => p.death === null);
+  if (alive.filter((p) => p.role === 'werewolf').length === 0) return 'good';
+
+  const initialGods = state.players.filter((p) => isGodRole(p.role)).length;
+  const initialVillagers = state.players.filter((p) => p.role === 'villager').length;
+  const gods = alive.filter((p) => isGodRole(p.role)).length;
+  const villagers = alive.filter((p) => p.role === 'villager').length;
+
+  if (initialGods > 0 && gods === 0) return 'wolf';
+  if (initialVillagers > 0 && villagers === 0) return 'wolf';
+  return null;
+}
+
+function finishGame(state: GameState, events: GameEvent[], winner: Camp): void {
+  state.winner = winner;
+  state.pending = null;
+  goTo(state, events, 'GAME_OVER');
+  emit(state, events, {
+    t: 'game_over',
+    winner,
+    reveal: state.players.map((p) => ({ seat: p.seat, role: p.role })),
+  });
+}
+
+function enterNight(state: GameState, events: GameEvent[]): void {
+  state.day += 1;
+  state.night = emptyNight();
+  state.vote = emptyVote();
+  state.speech = emptySpeech();
+  goTo(state, events, 'NIGHT_GUARD');
+}
+
+// ────────────────────────────── 计票 ──────────────────────────────
+
+function tally(
+  votes: { seat: SeatId; target: VoteTarget }[],
+  weightOf: (voter: SeatId) => number,
+): { counts: { seat: SeatId; votes: number }[]; top: SeatId[] } {
+  const totals = new Map<SeatId, number>();
+  for (const vote of votes) {
+    if (vote.target === 'abstain') continue;
+    totals.set(vote.target, (totals.get(vote.target) ?? 0) + weightOf(vote.seat));
+  }
+
+  const counts = [...totals.entries()]
+    .map(([seat, votes_]) => ({ seat, votes: votes_ }))
+    .sort((a, b) => b.votes - a.votes || a.seat - b.seat);
+
+  const max = counts[0]?.votes ?? 0;
+  const top = max > 0 ? counts.filter((c) => c.votes === max).map((c) => c.seat) : [];
+  return { counts, top };
 }
 
 // ────────────────────────────── Action 校验与应用 ──────────────────────────────
 
-/**
- * 校验并应用一个 Action。
- *
- * 返回 false 表示 Action 未被接受（已产出 action_rejected 事件，状态未改变）。
- */
 function tryApplyAction(state: GameState, events: GameEvent[], action: Action): boolean {
   const pending = state.pending;
   if (!pending) {
@@ -387,31 +706,42 @@ function validateAgainstOptions(pending: PendingRequest, action: Action): string
   const candidates = pending.options.filter((o) => o.kind === action.kind);
   if (candidates.length === 0) return `当前阶段不接受 ${action.kind}`;
 
-  if (action.kind === 'chief_signup' || action.kind === 'speak') return null;
+  if (action.kind === 'speak' || action.kind === 'chief_signup') return null;
 
-  // 女巫同一个 kind 下有多个选项（解药 / 毒药 / 不用药），先按 use 挑出适用的那一个
-  let option = candidates[0]!;
+  if (action.kind === 'chief_withdraw') {
+    const allowed = candidates.some((o) => o.params?.['withdraw']?.includes(action.withdraw));
+    return allowed ? null : '当前不能提交这个退水意向';
+  }
+
   if (action.kind === 'witch_act') {
+    // 女巫同一个 kind 下有多个选项（解药 / 毒药 / 不用药），先按 use 挑出适用的那一个
     const matched = candidates.find((o) => o.params?.['use']?.includes(action.use));
     if (!matched) return `当前不能使用「${action.use}」（可能是药水已用完或规则不允许）`;
-    option = matched;
     if (action.use === 'pass') {
       return action.target === undefined ? null : '选择不用药时不应指定目标';
     }
     if (action.target === undefined) return `使用「${action.use}」必须指定目标`;
+    return matched.targets.includes(action.target) ? null : `${action.target} 号不是合法目标`;
   }
 
-  if (action.kind === 'hunter_shoot') {
-    if (action.target === null) return null;
-    return option.targets.includes(action.target) ? null : `${action.target} 号不是可开枪的目标`;
+  if (action.kind === 'hunter_shoot' || action.kind === 'chief_transfer') {
+    if (action.target === null) {
+      if (action.kind === 'hunter_shoot') return null;
+      const allowDestroy = candidates.some((o) => o.params?.['allowDestroy']?.includes(true));
+      return allowDestroy ? null : '当前不能撕毁警徽';
+    }
+    const targets = candidates.flatMap((o) => o.targets);
+    return targets.includes(action.target) ? null : `${action.target} 号不是合法目标`;
   }
 
   const target = 'target' in action ? action.target : undefined;
   if (target === undefined) return `${action.kind} 必须指定目标`;
-  if (target === 'abstain') return '当前不允许弃票';
-
-  const allTargets = candidates.flatMap((o) => o.targets);
-  return allTargets.includes(target) ? null : `${target} 号不是合法目标`;
+  if (target === 'abstain') {
+    const allowAbstain = candidates.some((o) => o.params?.['allowAbstain']?.includes(true));
+    return allowAbstain ? null : '当前不允许弃票';
+  }
+  const targets = candidates.flatMap((o) => o.targets);
+  return targets.includes(target) ? null : `${target} 号不是合法目标`;
 }
 
 function applyAction(state: GameState, events: GameEvent[], action: Action): void {
@@ -435,7 +765,12 @@ function applyAction(state: GameState, events: GameEvent[], action: Action): voi
       const camp = roleCamp(playerAt(state, action.target).role);
       state.night.seerTarget = action.target;
       state.night.seerCamp = camp;
-      emit(state, events, { t: 'seer_result', seat: action.actor, target: action.target, camp }, seatsVisible(action.actor));
+      emit(
+        state,
+        events,
+        { t: 'seer_result', seat: action.actor, target: action.target, camp },
+        seatsVisible(action.actor),
+      );
       break;
     }
     case 'chief_signup':
@@ -443,8 +778,24 @@ function applyAction(state: GameState, events: GameEvent[], action: Action): voi
       if (action.join) state.chief.candidates.push(action.actor);
       break;
     case 'chief_withdraw':
-      if (!state.chief.withdrawn.includes(action.actor)) state.chief.withdrawn.push(action.actor);
+      if (action.withdraw && !state.chief.withdrawn.includes(action.actor)) {
+        state.chief.withdrawn.push(action.actor);
+        emit(state, events, { t: 'chief_withdrawn', seat: action.actor });
+      }
+      state.chief.withdrawQueue = state.chief.withdrawQueue.filter((s) => s !== action.actor);
       break;
+    case 'chief_transfer': {
+      const transferTo = action.target;
+      state.pendingChiefTransfer = null;
+      if (transferTo === null) {
+        state.chief.badgeAlive = false;
+        setChief(state, null);
+      } else {
+        setChief(state, transferTo);
+      }
+      emit(state, events, { t: 'chief_transferred', from: action.actor, to: transferTo });
+      break;
+    }
     case 'speak':
       emit(state, events, {
         t: 'spoke',
@@ -453,13 +804,34 @@ function applyAction(state: GameState, events: GameEvent[], action: Action): voi
         context: speechContextFor(state.phase),
       });
       state.speech.spoken.push(action.actor);
+      if (state.phase === 'LAST_WORDS') {
+        playerAt(state, action.actor).lastWordsDone = true;
+        state.lastWordsQueue = state.lastWordsQueue.filter((s) => s !== action.actor);
+      } else {
+        state.speech.queue = state.speech.queue.filter((s) => s !== action.actor);
+      }
       break;
     case 'vote':
-      state.vote.votes.push({ seat: action.actor, target: action.target });
+      if (state.phase === 'CHIEF_VOTE' || state.phase === 'CHIEF_PK_VOTE') {
+        if (action.target !== 'abstain') state.chief.votes.push({ seat: action.actor, target: action.target });
+      } else {
+        state.vote.votes.push({ seat: action.actor, target: action.target });
+      }
       break;
-    case 'hunter_shoot':
+    case 'hunter_shoot': {
+      state.hunterQueue = state.hunterQueue.filter((s) => s !== action.actor);
       emit(state, events, { t: 'hunter_shot', seat: action.actor, target: action.target });
+      if (action.target === null) break;
+
+      const victim = playerAt(state, action.target);
+      victim.death = { cause: 'gun', day: state.day };
+      victim.deathAnnounced = true;
+      emit(state, events, { t: 'died', seat: action.target, cause: 'gun' });
+
+      if (victim.isChief && state.chief.badgeAlive) state.pendingChiefTransfer = action.target;
+      if (canHunterShoot(state, victim)) state.hunterQueue.push(action.target);
       break;
+    }
   }
 
   if (isNightPhase(state.phase)) {

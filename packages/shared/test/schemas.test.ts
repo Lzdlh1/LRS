@@ -13,7 +13,10 @@ const VALID_ACTIONS = [
   { kind: 'witch_act', actor: 5, use: 'pass' },
   { kind: 'seer_check', actor: 7, target: 1 },
   { kind: 'chief_signup', actor: 2, join: true },
-  { kind: 'chief_withdraw', actor: 2 },
+  { kind: 'chief_withdraw', actor: 2, withdraw: true },
+  { kind: 'chief_withdraw', actor: 2, withdraw: false },
+  { kind: 'chief_transfer', actor: 1, target: 4 },
+  { kind: 'chief_transfer', actor: 1, target: null },
   { kind: 'speak', actor: 3, text: '我觉得 5 号有问题。' },
   { kind: 'vote', actor: 3, target: 5 },
   { kind: 'vote', actor: 3, target: 'abstain' },
@@ -30,6 +33,7 @@ describe('Action schema', () => {
     const covered = new Set(VALID_ACTIONS.map((a) => a.kind));
     expect([...covered].sort()).toEqual([
       'chief_signup',
+      'chief_transfer',
       'chief_withdraw',
       'guard_protect',
       'hunter_shoot',

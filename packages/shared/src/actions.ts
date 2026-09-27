@@ -8,6 +8,7 @@ export const ACTION_KINDS = [
   'seer_check',
   'chief_signup',
   'chief_withdraw',
+  'chief_transfer',
   'speak',
   'vote',
   'hunter_shoot',
@@ -61,6 +62,14 @@ export const actionSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('chief_withdraw'),
     actor: seatIdSchema,
+    /** true = 退水（放弃竞选，之后也无投票权）；false = 继续参选 */
+    withdraw: z.boolean(),
+  }),
+  z.object({
+    kind: z.literal('chief_transfer'),
+    actor: seatIdSchema,
+    /** null 表示撕毁警徽，本局不再有警长 */
+    target: z.union([seatIdSchema, z.null()]),
   }),
   z.object({
     kind: z.literal('speak'),

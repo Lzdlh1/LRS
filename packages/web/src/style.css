@@ -1,0 +1,95 @@
+:root {
+  --bg: #0e1016;
+  --panel: #171a24;
+  --panel-2: #1f2534;
+  --line: #2b3143;
+  --line-strong: #3a4260;
+  --text: #c8cfe0;
+  --text-dim: #8e97ad;
+  --text-faint: #5e677d;
+  --accent: #7c8cff;
+  --good: #4fd1a5;
+  --warn: #e0b95e;
+  --danger: #e88b93;
+  --purple: #c5a8ff;
+  --wolf: #e88b93;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+button {
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: #fff;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+button.primary {
+  background: #2a3350;
+  border-color: #465089;
+  color: #9fb0ff;
+}
+
+button.ghost {
+  background: transparent;
+  border-color: var(--line);
+  color: var(--text-dim);
+}
+
+input,
+textarea {
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: #10131b;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 9px;
+}
+
+input:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2b3143;
+  border-radius: 4px;
+}

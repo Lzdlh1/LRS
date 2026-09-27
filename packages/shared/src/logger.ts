@@ -75,12 +75,27 @@ export function createLogger(scope: string, sink: LogSink, minLevel: LogLevel = 
   };
 }
 
-/** 控制台 sink：逐行输出 JSON，开发期用。 */
+interface TextWriter {
+  write(chunk: string): void;
+}
+
+/**
+ * 取 stdout / stderr。
+ * 用 globalThis 上的可选属性而不是裸写 process —— 这样这个模块在浏览器里
+ * 也能安全地被导入（前端只想复用类型，不该被迫引入 Node 全局）。
+ */
+function streams(): { out: TextWriter | null; err: TextWriter | null } {
+  const proc = (globalThis as { process?: { stdout?: TextWriter; stderr?: TextWriter } }).process;
+  return { out: proc?.stdout ?? null, err: proc?.stderr ?? null };
+}
+
+/** 控制台 sink：逐行输出 JSON，开发期用。没有 stdout 时静默降级。 */
 export const consoleSink: LogSink = {
   write(record) {
     const line = `${JSON.stringify(record)}\n`;
-    if (record.level === 'warn' || record.level === 'error') process.stderr.write(line);
-    else process.stdout.write(line);
+    const { out, err } = streams();
+    if (record.level === 'warn' || record.level === 'error') err?.write(line);
+    else out?.write(line);
   },
 };
 

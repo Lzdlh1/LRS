@@ -28,5 +28,6 @@
       "@lrs/core-engine": ["./packages/core-engine/src/index.ts"]
     }
   },
-  "include": ["packages/**/*.ts", "vitest.config.ts"]
+  "include": ["packages/**/*.ts", "vitest.config.ts"],
+  "exclude": ["packages/web/**"]
 }

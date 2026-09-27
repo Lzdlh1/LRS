@@ -71,11 +71,11 @@ shared ← llm-router ← agent-host ← server
 | M1-1 | 初始化 workspace 骨架 | 根 `package.json`(workspaces) / `tsconfig.base.json` / `vitest.config.ts` / `shared` 与 `core-engine` 的 package.json | `npm install` 成功；`npm test` 能跑（0 个用例也算通过） |
 | M1-2 | 领域类型与 Zod schema | `shared/src/{ids,roles,phases,actions,events,schemas}.ts` | 单测：合法 Action/Event 通过，非法被拒 |
 | M1-3 | 板子与规则参数 | `core-engine/src/{board,rules}.ts`；9 人预女猎守 + 设计文档 4.3 全部默认值 | 单测：板子人数与角色数一致；规则参数可被覆盖 |
-| M1-4 | 状态机骨架 | `machine.ts`：`createGame(config)` → `applyAction(a)` → 返回新事件数组；发出 `phase_changed` / `action_requested` | 单测：能走通「开局 → 上警报」最小路径 |
+| M1-4 | 状态机骨架 | `machine.ts`：`createGame(config)` → `applyAction(a)` → 返回新事件数组；发出 `phase_changed` / `action_requested` | 单测：能走通「开局 → 第 1 夜 → 天亮 → 上警报」最小路径 |
 | M1-5 | 夜晚四阶段 | `roles/{guard,wolf,witch,seer}.ts` | 单测：顺序固定为 守卫→狼→女巫→预言家；`action_requested.options` 正确排除非法项（连守 / 无药 / 自救）；女巫能收到 `witch_night_info` |
 | M1-6 | 天亮结算 | 死讯公布、遗言、猎人开枪、**同守同救** | 单测：同守同救判定；女巫毒死猎人不能开枪；首夜死亡有遗言 |
-| M1-7 | 白天阶段 | 依次发言、投票、平票 PK 再投、遗言、警徽转移 | 单测：平票 → PK → 再平票则无人出局；警长 1.5 票；警长被刀后警徽转移 |
-| M1-8 | 昼夜循环与胜负判定 | 天数推进 + 屠边判定 | 单测：狼全灭 / 屠神 / 屠民 三种结局；双死同时发生时胜负优先级 |
+| M1-7 | 白天阶段 | **警长竞选**（上警 / 竞选发言 / 退水 / 投票 / PK）、公布死讯、依次发言、投票、平票 PK 再投、遗言、警徽转移 | 单测：平票 → PK → 再平票则无人出局；警长 1.5 票；警长被刀后警徽转移；**首夜死者照常参与竞选与投票** |
+| M1-8 | 昼夜循环与胜负判定 | 天数推进 + 屠边判定 + **狼刀在先** | 单测：狼全灭 / 屠神 / 屠民 三种结局；狼刀在先时后手毒杀与开枪不改变结果 |
 | M1-9 | visibility 与事件流 | `visibility.ts`；所有私密事件带 `seats[...]` | 单测：以某座位为观察者过滤事件流，看不到别人的 `role_assigned` / `seer_result` |
 | M1-10 | 整局端到端 + 黄金回放 | `test/fixtures/*.jsonl`（脚本化 Action 序列 + 期望事件流） | `npm test` 全绿；能跑完一局 9 人局到 `game_over` |
 

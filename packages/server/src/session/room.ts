@@ -115,10 +115,15 @@ export class GameRoom {
   subscribe(subscriber: Subscriber): void {
     this.subscribers.set(subscriber.id, subscriber);
     this.sendSnapshot(subscriber, 0);
+    // 人回来了就把推进接上：空闲期间计时器是停着的
+    this.armTimer();
+    this.scheduleAi();
   }
 
   unsubscribe(id: string): void {
     this.subscribers.delete(id);
+    // 最后一个人走了就别再往下打 —— 超时兜底是为了「有人在等」而存在的
+    if (this.subscribers.size === 0) this.clearTimer();
   }
 
   get subscriberCount(): number {
@@ -322,6 +327,13 @@ export class GameRoom {
       return;
     }
 
+    // 没人在看的时候不装计时器：否则一个闲置的服务会自己把整局打完，
+    // 每一次 AI 发言都是真金白银。人一连上来 subscribe() 会重新装。
+    if (this.subscribers.size === 0) {
+      this.deadlineAt = 0;
+      return;
+    }
+
     this.deadlineAt = Date.now() + pending.deadlineMs;
     this.timer = setTimeout(() => {
       const current = pendingRequest(this.state);
@@ -350,6 +362,13 @@ export class GameRoom {
   private scheduleAi(): void {
     const host = this.host;
     if (!host) return;
+
+    // 没人看着就别动：否则服务一启动，AI 会先自己把一整夜加 8 个上警全走完。
+    // 人一连上来 subscribe() 会重新叫一次。
+    if (this.subscribers.size === 0) {
+      this.aiToken = '';
+      return;
+    }
 
     // 预思考要在「轮到真人」时也照跑 —— 真人思考的这段时间正是它存在的意义
     this.startPrefetch(host);

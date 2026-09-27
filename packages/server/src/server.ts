@@ -1,5 +1,5 @@
 import { createReadStream, existsSync, statSync } from 'node:fs';
-import { createServer, type Server, type ServerResponse } from 'node:http';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import type { Logger } from '@lrs/shared';
 import { WebSocketServer, type WebSocket } from 'ws';
@@ -52,6 +52,34 @@ function createWebHandler(webDir: string): ((url: URL, res: ServerResponse) => b
   };
 }
 
+const TOKEN_COOKIE = 'lrs_token';
+
+/**
+ * 一道极简门：设了 `ACCESS_TOKEN` 才启用。
+ *
+ * 认两种形式 —— 地址里带的 `?token=xxx`，以及换到手之后的 cookie。
+ * 前者用过一次就重定向掉，免得口令留在地址栏和浏览记录里。
+ * 没设口令时完全不设防（本地开发就是这种），行为与以前一模一样。
+ */
+function createGate(accessToken: string): {
+  enabled: boolean;
+  matches: (url: URL) => boolean;
+  allows: (req: IncomingMessage, url: URL) => boolean;
+} {
+  const enabled = accessToken !== '';
+  const fromQuery = (url: URL): boolean => enabled && url.searchParams.get('token') === accessToken;
+  const fromCookie = (req: IncomingMessage): boolean =>
+    (req.headers.cookie ?? '')
+      .split(';')
+      .some((part) => part.trim() === `${TOKEN_COOKIE}=${accessToken}`);
+
+  return {
+    enabled,
+    matches: fromQuery,
+    allows: (req, url) => !enabled || fromQuery(url) || fromCookie(req),
+  };
+}
+
 export interface StartServerOptions {
   config: ServerConfig;
   logger: Logger;
@@ -82,9 +110,26 @@ export function startServer(options: StartServerOptions): RunningServer {
   });
   let channelSeq = 0;
   const serveWeb = createWebHandler(config.webDir);
+  const gate = createGate(options.config.accessToken);
 
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+
+    // 口令带对了就换成 cookie，并把地址里的 token 摘掉
+    if (gate.matches(url)) {
+      res.writeHead(302, {
+        'set-cookie': `${TOKEN_COOKIE}=${config.accessToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`,
+        location: url.pathname,
+      });
+      res.end();
+      return;
+    }
+
+    if (!gate.allows(req, url)) {
+      res.writeHead(401, { 'content-type': 'text/plain; charset=utf-8' });
+      res.end('需要访问口令：请在地址后面加上 ?token=你的口令');
+      return;
+    }
 
     if (url.pathname === '/health') {
       const body = JSON.stringify({
@@ -107,7 +152,17 @@ export function startServer(options: StartServerOptions): RunningServer {
     res.end('Not Found');
   });
 
-  const wss = new WebSocketServer({ server, path: '/ws' });
+  const wss = new WebSocketServer({
+    server,
+    path: '/ws',
+    // WS 握手走同一道门；浏览器会把 cookie 带上，所以同源连接照常
+    // （verifyClient 的类型是同步/异步两个重载的联合，参数得自己标出来）
+    verifyClient: (info: { req: IncomingMessage }): boolean =>
+      gate.allows(
+        info.req,
+        new URL(info.req.url ?? '/', `http://${info.req.headers.host ?? 'localhost'}`),
+      ),
+  });
 
   wss.on('connection', (socket: WebSocket) => {
     channelSeq += 1;

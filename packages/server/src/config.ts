@@ -29,6 +29,13 @@ export interface ServerConfig {
   dbPath: string;
   /** 前端构建产物目录；存在就由这个服务一起托管，部署时只需要开一个端口 */
   webDir: string;
+  /**
+   * 访问口令。空串 = 不设防（本地开发就是这种）。
+   *
+   * 部署到公网**必须**设一个：这个应用没有账号体系，谁拿到地址谁就能玩，
+   * 而每一次 AI 发言都是真金白银的模型调用。
+   */
+  accessToken: string;
   llm: LlmConfig;
 }
 
@@ -53,6 +60,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
     logRetentionDays: positiveNumber(env['LOG_RETENTION_DAYS'], 7),
     dbPath: resolve(rootDir, env['DB_PATH'] ?? 'data/lrs.db'),
     webDir: resolve(rootDir, env['WEB_DIR'] ?? 'packages/web/dist'),
+    accessToken: env['ACCESS_TOKEN'] ?? '',
     llm: {
       deepseekApiKey: env['DEEPSEEK_API_KEY'] ?? '',
       deepseekBaseUrl: env['DEEPSEEK_BASE_URL'] ?? 'https://api.deepseek.com/v1',

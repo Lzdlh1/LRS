@@ -236,6 +236,23 @@ describe('行动提交', () => {
     expect(after.pending?.seat).not.toBe(actor);
   });
 
+  it('没人看着的时候不推进 —— 闲置的服务不该自己把整局打完', () => {
+    vi.useFakeTimers();
+    const { room } = makeRoom(777);
+
+    const god = collector();
+    god.subscribe(room, 'god', 'god');
+    const seqBefore = god.state().lastSeq;
+    room.unsubscribe('god');
+
+    // 十分钟过去了，局面上应该一动不动
+    vi.advanceTimersByTime(10 * 60 * 1000);
+
+    const back = collector();
+    back.subscribe(room, 'back', 'god');
+    expect(back.state().lastSeq).toBe(seqBefore);
+  });
+
   it('调试面板可以连续代打把整局跑完', () => {
     const { room } = makeRoom(31337);
     const god = collector();

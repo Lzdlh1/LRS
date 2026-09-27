@@ -62,6 +62,13 @@ function main(): void {
   if (llm.live) logging.server.info(llm.summary);
   else logging.server.warn(llm.summary);
 
+  // 只记「开没开」，绝不记口令本身
+  logging.server.info(
+    config.accessToken === ''
+      ? '访问口令未设置（任何人都能连，仅适合本地）'
+      : '访问口令已启用（地址后需带 ?token=…）',
+  );
+
   const running = startServer({
     config,
     logger: logging.server,

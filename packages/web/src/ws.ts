@@ -1,5 +1,12 @@
 import type { GameEvent } from '@lrs/shared';
-import type { ClientMessage, ClientState, ReplayPayload, ServerMessage } from '@lrs/server/protocol';
+import type {
+  ClientMessage,
+  ClientState,
+  ReplayPayload,
+  ServerMessage,
+  UsageReport,
+  UsageScope,
+} from '@lrs/server/protocol';
 import { onBeforeUnmount, ref } from 'vue';
 
 const MAX_KEPT_EVENTS = 600;
@@ -24,6 +31,8 @@ export function useGameSocket() {
   const streaming = ref<LiveSpeech | null>(null);
   /** 复盘面板的数据；null 表示面板没打开 */
   const replay = ref<ReplayPayload | null>(null);
+  /** 用量看板的数据；null 表示面板没打开 */
+  const usage = ref<UsageReport | null>(null);
   const connected = ref(false);
   const lastError = ref<string | null>(null);
 
@@ -98,6 +107,10 @@ export function useGameSocket() {
         replay.value = message.payload;
         return;
       }
+      if (message.type === 'usage') {
+        usage.value = message.payload;
+        return;
+      }
 
       state.value = message.state;
       if (message.type === 'snapshot') {
@@ -106,6 +119,10 @@ export function useGameSocket() {
         streaming.value = null;
         // 换了局的话，复盘面板里那份也过期了
         if (replay.value && replay.value.gameId !== message.state.gameId) replay.value = null;
+        // 用量看的是「本局」时同理；看历史的那份不受换局影响
+        if (usage.value?.scope === 'game' && usage.value.gameId !== message.state.gameId) {
+          usage.value = null;
+        }
       } else {
         events.value = [...events.value, ...message.events].slice(-MAX_KEPT_EVENTS);
       }
@@ -135,16 +152,27 @@ export function useGameSocket() {
     replay.value = null;
   }
 
+  function openUsage(scope: UsageScope): void {
+    send({ type: 'usage', scope });
+  }
+
+  function closeUsage(): void {
+    usage.value = null;
+  }
+
   return {
     state,
     events,
     streaming,
     replay,
+    usage,
     connected,
     lastError,
     connect,
     send,
     openReplay,
     closeReplay,
+    openUsage,
+    closeUsage,
   };
 }

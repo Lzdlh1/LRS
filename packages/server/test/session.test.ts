@@ -2,10 +2,10 @@ import type { AgentHost } from '@lrs/agent-host';
 import { choicesFor, type PendingRequest, type Viewer } from '@lrs/core-engine';
 import { createLogger, nullSink, type Action, type SeatId } from '@lrs/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ClientState, ReplayPayload, ServerMessage } from '../src/session/protocol.ts';
+import type { ClientState, ReplayPayload, ServerMessage, UsageReport } from '../src/session/protocol.ts';
 import { GameRoom, type AgentHostFactory } from '../src/session/room.ts';
 import { openDatabase } from '../src/store/db.ts';
-import { GameStore } from '../src/store/gameStore.ts';
+import { GameStore, type UsageRecord } from '../src/store/gameStore.ts';
 
 const logger = createLogger('test', nullSink, 'error');
 
@@ -438,6 +438,69 @@ describe('复盘', () => {
     expect(payload.sealed).toBe(false);
     expect(payload.roles).toHaveLength(9);
     expect(payload.events.filter((event) => event.payload.t === 'role_assigned')).toHaveLength(1);
+  });
+});
+
+describe('用量看板', () => {
+  function lastUsage(target: Collector): UsageReport {
+    for (let i = target.messages.length - 1; i >= 0; i -= 1) {
+      const message = target.messages[i]!;
+      if (message.type === 'usage') return message.payload;
+    }
+    throw new Error('没有收到用量数据');
+  }
+
+  const usage = (gameId: string, task: string, model: string, cost: number): UsageRecord => ({
+    gameId,
+    task,
+    tier: 'cheap',
+    provider: 'deepseek',
+    model,
+    inTokens: 1000,
+    outTokens: 200,
+    cost,
+    ts: new Date().toISOString(),
+  });
+
+  it('本局与全部历史两个范围给得出，数字与 llm_usage 对得上', () => {
+    const { room, store } = makeRoom(2024);
+    const god = collector();
+    god.subscribe(room, 'god', 'god');
+
+    // 一笔属于本局，一笔属于上一局
+    store.recordUsage(usage(room.gameId, 'decision', 'deepseek-reasoner', 0.0072));
+    store.recordUsage(usage('old-game', 'speech', 'deepseek-chat', 0.0018));
+
+    room.handleMessage('god', { type: 'usage', scope: 'game' });
+    const mine = lastUsage(god);
+    expect(mine.scope).toBe('game');
+    expect(mine.gameId).toBe(room.gameId);
+    expect(mine.totals).toEqual({ calls: 1, inTokens: 1000, outTokens: 200, cost: 0.0072 });
+    expect(mine.byTask.map((row) => row.task)).toEqual(['decision']);
+    expect(mine.byModel.map((row) => row.model)).toEqual(['deepseek-reasoner']);
+    expect(mine.byGame, '只看本局时按局拆分没有意义').toEqual([]);
+
+    room.handleMessage('god', { type: 'usage', scope: 'all' });
+    const all = lastUsage(god);
+    expect(all.scope).toBe('all');
+    expect(all.gameId).toBeNull();
+    expect(all.totals.calls).toBe(2);
+    expect(all.byTask.map((row) => row.task).sort()).toEqual(['decision', 'speech']);
+    expect(all.byGame.map((row) => row.gameId).sort()).toEqual([room.gameId, 'old-game'].sort());
+    expect(all.byGame.find((row) => row.gameId === room.gameId)?.board).toBe('9 人预女猎守');
+  });
+
+  it('没有落库（store 为 null）时给一份空报告，而不是报错', () => {
+    const room = new GameRoom({ logger, store: null });
+    rooms.push(room);
+    const god = collector();
+    god.subscribe(room, 'god', 'god');
+
+    room.handleMessage('god', { type: 'usage', scope: 'game' });
+    const payload = lastUsage(god);
+    expect(payload.totals).toEqual({ calls: 0, inTokens: 0, outTokens: 0, cost: 0 });
+    expect(payload.byTask).toEqual([]);
+    expect(payload.byGame).toEqual([]);
   });
 });
 

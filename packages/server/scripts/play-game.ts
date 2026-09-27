@@ -79,7 +79,8 @@ async function playGame(): Promise<void> {
       console.log('[服务端错误]', message.message);
       return;
     }
-    if (message.type === 'replay') return; // 演示脚本不请求复盘
+    // 复盘与用量都是按需拉取的，演示脚本不发这类请求，收到就忽略
+    if (message.type !== 'snapshot' && message.type !== 'update') return;
 
     lastState = message.state;
     for (const raw of message.events as GameEvent[]) {

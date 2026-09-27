@@ -100,7 +100,8 @@ export type ClientMessage =
   | { type: 'resync'; sinceSeq: number }
   | { type: 'newGame'; seed?: number }
   | { type: 'autoPlay'; count?: number }
-  | { type: 'replay'; day?: number };
+  | { type: 'replay'; day?: number }
+  | { type: 'usage'; scope: UsageScope };
 
 export type ServerMessage =
   | { type: 'snapshot'; state: ClientState; events: GameEvent[] }
@@ -109,7 +110,39 @@ export type ServerMessage =
   | { type: 'stream'; seat: SeatId; delta: string }
   | { type: 'stream-done'; seat: SeatId }
   | { type: 'replay'; payload: ReplayPayload }
+  | { type: 'usage'; payload: UsageReport }
   | { type: 'error'; message: string };
+
+/** 成本看板的统计范围 */
+export type UsageScope = 'game' | 'all';
+
+/** 一组模型调用的合计（与 store 的 UsageBucket 同形，在 room 组装处由 tsc 兜住一致性） */
+export interface UsageBucket {
+  calls: number;
+  inTokens: number;
+  outTokens: number;
+  cost: number;
+}
+
+export interface UsageGameBucket extends UsageBucket {
+  gameId: string;
+  board: string;
+  startedAt: string;
+  endedAt: string | null;
+  winner: Camp | null;
+}
+
+export interface UsageReport {
+  /** 服务端把请求的范围回显回来，面板据此高亮当前 tab */
+  scope: UsageScope;
+  /** 统计的是哪一局；scope 为 all 时是 null */
+  gameId: string | null;
+  totals: UsageBucket;
+  byTask: (UsageBucket & { task: string })[];
+  byModel: (UsageBucket & { model: string })[];
+  /** 按局拆分；只看本局时为空数组 */
+  byGame: UsageGameBucket[];
+}
 
 export interface ProjectArgs {
   roomId: string;

@@ -23,6 +23,8 @@ import {
   type ReplayDecision,
   type ReplayPayload,
   type ServerMessage,
+  type UsageReport,
+  type UsageScope,
 } from './protocol.ts';
 
 export interface Subscriber {
@@ -152,6 +154,9 @@ export class GameRoom {
         return;
       case 'replay':
         this.sendReplay(id, message.day);
+        return;
+      case 'usage':
+        this.sendUsage(id, message.scope);
         return;
       default: {
         const unknown = message as { type?: string };
@@ -618,5 +623,33 @@ export class GameRoom {
         ? null
         : this.state.players.map((player) => ({ seat: player.seat, role: player.role })),
     };
+  }
+
+  // ── 用量看板 ──
+
+  private sendUsage(id: string, scope: UsageScope): void {
+    const subscriber = this.subscribers.get(id);
+    if (!subscriber) return;
+    subscriber.send({ type: 'usage', payload: this.buildUsage(scope) });
+  }
+
+  /**
+   * 用量数据全部来自 llm_usage 表，这里只负责挑范围。
+   *
+   * store 为 null（纯内存模式的测试）时返回一份空报告 —— 界面显示 0，而不是报错。
+   */
+  private buildUsage(scope: UsageScope): UsageReport {
+    const gameId = scope === 'game' ? this.currentGameId : null;
+    if (!this.store) {
+      return {
+        scope,
+        gameId,
+        totals: { calls: 0, inTokens: 0, outTokens: 0, cost: 0 },
+        byTask: [],
+        byModel: [],
+        byGame: [],
+      };
+    }
+    return { scope, ...this.store.usageReport(gameId) };
   }
 }

@@ -5,12 +5,26 @@ import ActionPanel from './components/ActionPanel.vue';
 import EventLog from './components/EventLog.vue';
 import ReplayPanel from './components/ReplayPanel.vue';
 import RoundTable from './components/RoundTable.vue';
+import UsagePanel from './components/UsagePanel.vue';
 import { formatEvent, type EventLine } from './format';
 import { PHASE_LABELS } from './labels';
 import { useGameSocket } from './ws';
 
-const { state, events, streaming, replay, connected, lastError, connect, send, openReplay, closeReplay } =
-  useGameSocket();
+const {
+  state,
+  events,
+  streaming,
+  replay,
+  usage,
+  connected,
+  lastError,
+  connect,
+  send,
+  openReplay,
+  closeReplay,
+  openUsage,
+  closeUsage,
+} = useGameSocket();
 
 onMounted(connect);
 
@@ -79,6 +93,7 @@ function newGame(): void {
         {{ viewerLabel }}
       </button>
       <button class="ghost" :disabled="!connected" @click="openReplay()">复盘</button>
+      <button class="ghost" :disabled="!connected" @click="openUsage('game')">用量</button>
       <button class="ghost" @click="newGame">新开一局</button>
     </header>
 
@@ -90,6 +105,7 @@ function newGame(): void {
     <ActionPanel :state="state" :connected="connected" :error="lastError" @send="submit" @auto="autoPlay" @new-game="newGame" />
 
     <ReplayPanel v-if="replay" :payload="replay" @day="openReplay" @close="closeReplay" />
+    <UsagePanel v-if="usage" :payload="usage" @scope="openUsage" @close="closeUsage" />
   </div>
 </template>
 

@@ -30,6 +30,65 @@ export interface UsageRecord {
   ts: string;
 }
 
+/** 一组调用的合计 */
+export interface UsageBucket {
+  calls: number;
+  inTokens: number;
+  outTokens: number;
+  cost: number;
+}
+
+/** 按局拆分的用量，附带这一局的基本信息 */
+export interface UsageGameBucket extends UsageBucket {
+  gameId: GameId;
+  board: string;
+  startedAt: string;
+  endedAt: string | null;
+  winner: Camp | null;
+}
+
+export interface UsageReport {
+  /** 谁被统计：null = 全部历史 */
+  gameId: GameId | null;
+  totals: UsageBucket;
+  byTask: (UsageBucket & { task: string })[];
+  byModel: (UsageBucket & { model: string })[];
+  /** 按局拆分（只看当前局时为空数组 —— 一行没有意义） */
+  byGame: UsageGameBucket[];
+}
+
+/**
+ * llm_usage 聚合查询的原始行（列名就是库里的下划线写法）。
+ *
+ * 必须是 type 别名而不是 interface —— 只有字面量类型才会被 TS 赋予隐式索引签名，
+ * 这样从 `Record<string, SQLOutputValue>` 断言过来才合法。
+ */
+type UsageAggRow = {
+  calls: number;
+  in_tokens: number;
+  out_tokens: number;
+  cost: number;
+};
+
+type UsageGroupedRow = UsageAggRow & { key: string };
+
+type UsageGameAggRow = UsageAggRow & {
+  game_id: string;
+  board: string;
+  started_at: string;
+  ended_at: string | null;
+  winner: string | null;
+};
+
+const toBucket = (row: UsageAggRow): UsageBucket => ({
+  calls: row.calls,
+  inTokens: row.in_tokens,
+  outTokens: row.out_tokens,
+  cost: row.cost,
+});
+
+const EMPTY_BUCKET: UsageBucket = { calls: 0, inTokens: 0, outTokens: 0, cost: 0 };
+
 export class GameStore {
   private readonly db: DatabaseSync;
 
@@ -140,6 +199,57 @@ export class GameStore {
       inTokens: row?.in_tokens ?? 0,
       outTokens: row?.out_tokens ?? 0,
       cost: row?.cost ?? 0,
+    };
+  }
+
+  /**
+   * 成本看板的数据源。
+   *
+   * `gameId` 传 null 就是全部历史；按局拆分只在看历史时才有意义。
+   */
+  usageReport(gameId: GameId | null): UsageReport {
+    const where = gameId === null ? '' : 'WHERE game_id = ?';
+    const args = gameId === null ? [] : [gameId];
+
+    const totals = this.db
+      .prepare(
+        `SELECT COUNT(*) AS calls, COALESCE(SUM(in_tokens),0) AS in_tokens, COALESCE(SUM(out_tokens),0) AS out_tokens, COALESCE(SUM(cost),0) AS cost FROM llm_usage ${where}`,
+      )
+      .get(...args) as UsageAggRow | undefined;
+
+    const grouped = (column: 'task' | 'model') =>
+      this.db
+        .prepare(
+          `SELECT ${column} AS key, COUNT(*) AS calls, COALESCE(SUM(in_tokens),0) AS in_tokens, COALESCE(SUM(out_tokens),0) AS out_tokens, COALESCE(SUM(cost),0) AS cost FROM llm_usage ${where} GROUP BY ${column} ORDER BY cost DESC`,
+        )
+        .all(...args) as UsageGroupedRow[];
+
+    const byGame =
+      gameId === null
+        ? (this.db
+            .prepare(
+              `SELECT u.game_id AS game_id, COALESCE(g.board, '') AS board, COALESCE(g.started_at, '') AS started_at, g.ended_at AS ended_at, g.winner AS winner,
+                      COUNT(*) AS calls, COALESCE(SUM(u.in_tokens),0) AS in_tokens, COALESCE(SUM(u.out_tokens),0) AS out_tokens, COALESCE(SUM(u.cost),0) AS cost
+               FROM llm_usage u LEFT JOIN games g ON g.id = u.game_id
+               WHERE u.game_id IS NOT NULL
+               GROUP BY u.game_id ORDER BY g.started_at DESC`,
+            )
+            .all() as UsageGameAggRow[])
+        : [];
+
+    return {
+      gameId,
+      totals: totals ? toBucket(totals) : { ...EMPTY_BUCKET },
+      byTask: grouped('task').map((row) => ({ task: row.key, ...toBucket(row) })),
+      byModel: grouped('model').map((row) => ({ model: row.key, ...toBucket(row) })),
+      byGame: byGame.map((row) => ({
+        gameId: row.game_id,
+        board: row.board,
+        startedAt: row.started_at,
+        endedAt: row.ended_at,
+        winner: row.winner as Camp | null,
+        ...toBucket(row),
+      })),
     };
   }
 

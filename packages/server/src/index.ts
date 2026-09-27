@@ -17,6 +17,7 @@ function main(): void {
     logLevel: config.logLevel,
     logDir: config.logDir,
     dbPath: config.dbPath,
+    webDir: config.webDir,
   });
 
   // 模型配置只记「用哪个模型、有没有配 Key」，绝不记 Key 本身

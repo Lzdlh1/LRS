@@ -168,7 +168,9 @@ const modelLabel = (model: string): string => model || '（调用失败）';
 }
 
 .title {
+  font-family: var(--font-display);
   font-weight: 600;
+  letter-spacing: 0.12em;
 }
 
 .tabs {

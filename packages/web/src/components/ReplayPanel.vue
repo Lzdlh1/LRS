@@ -133,7 +133,9 @@ const isWolf = (role: Role): boolean => role === 'werewolf';
 }
 
 .title {
+  font-family: var(--font-display);
   font-weight: 600;
+  letter-spacing: 0.12em;
 }
 
 .days {

@@ -49,7 +49,7 @@ const phaseLabel = computed(() => {
 });
 
 const viewerLabel = computed(() =>
-  godView.value ? '上帝视角 · 全场可见' : `我的视角 · ${state.value?.viewer ?? 1} 号`,
+  godView.value ? '上帝视角' : `我的视角 · ${state.value?.viewer ?? 1} 号`,
 );
 
 function toggleViewer(): void {
@@ -72,20 +72,22 @@ function newGame(): void {
 <template>
   <div class="app">
     <header class="bar">
-      <span class="brand">🐺 AI 狼人杀</span>
-      <span class="dim">{{ state?.board ?? '连接中…' }}</span>
+      <span class="brand"><i class="moon">🌒</i>AI 狼人杀</span>
+      <span class="board">{{ state?.board ?? '连接中…' }}</span>
+
       <span v-if="state" class="chip">第 {{ state.day }} 天</span>
       <span v-if="state" class="chip phase">{{ phaseLabel }}</span>
       <span v-if="state?.chief.elected" class="chip chief">🎖 {{ state.chief.elected }} 号</span>
-      <span v-else-if="state && !state.chief.badgeAlive" class="chip dim-chip">警徽已流失</span>
+      <span v-else-if="state && !state.chief.badgeAlive" class="chip lost">警徽已流失</span>
       <span v-if="state?.witchPotions" class="chip potion">
         🧪 解药 {{ state.witchPotions.antidote }} · 毒药 {{ state.witchPotions.poison }}
       </span>
 
       <span class="spacer" />
 
-      <span class="conn" :class="{ ok: connected }">{{ connected ? '● 已连接' : '○ 未连接' }}</span>
+      <span class="conn" :class="{ ok: connected }">{{ connected ? '已连接' : '未连接' }}</span>
       <button
+        class="viewer"
         :class="{ primary: godView }"
         :title="godView ? '当前是上帝视角，点击切回自己的视角' : '当前是自己的视角，点击可看全场底牌（调试用）'"
         @click="toggleViewer"
@@ -102,7 +104,14 @@ function newGame(): void {
       <EventLog :lines="lines" :streaming="streaming" />
     </main>
 
-    <ActionPanel :state="state" :connected="connected" :error="lastError" @send="submit" @auto="autoPlay" @new-game="newGame" />
+    <ActionPanel
+      :state="state"
+      :connected="connected"
+      :error="lastError"
+      @send="submit"
+      @auto="autoPlay"
+      @new-game="newGame"
+    />
 
     <ReplayPanel v-if="replay" :payload="replay" @day="openReplay" @close="closeReplay" />
     <UsagePanel v-if="usage" :payload="usage" @scope="openUsage" @close="closeUsage" />
@@ -118,88 +127,139 @@ function newGame(): void {
 }
 
 .bar {
+  flex: none;
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   padding: 9px 14px;
-  background: var(--panel);
+  background: linear-gradient(180deg, rgba(22, 27, 38, 0.92) 0%, rgba(13, 17, 25, 0.92) 100%);
   border-bottom: 1px solid var(--line);
   flex-wrap: wrap;
 }
 
 .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-display);
   font-weight: 700;
-  font-size: 14px;
+  font-size: 16px;
+  letter-spacing: 0.06em;
+  color: #eef1fb;
+  white-space: nowrap;
+}
+
+.moon {
+  font-style: normal;
+  font-size: 15px;
+  filter: drop-shadow(0 0 6px rgba(147, 164, 255, 0.5));
+}
+
+.board {
+  color: var(--text-faint);
+  font-size: 11.5px;
+  white-space: nowrap;
 }
 
 .spacer {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .chip {
-  padding: 2px 9px;
+  padding: 2px 10px;
   border-radius: 999px;
-  background: var(--panel-2);
+  background: rgba(26, 32, 48, 0.8);
   border: 1px solid var(--line);
   font-size: 11px;
   color: var(--text-dim);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .chip.phase {
-  background: #2b2317;
-  border-color: #6b5426;
-  color: var(--warn);
+  background: rgba(217, 178, 106, 0.1);
+  border-color: rgba(217, 178, 106, 0.42);
+  color: var(--gold);
 }
 
 .chip.chief {
-  background: #2a3350;
-  border-color: #465089;
-  color: #9fb0ff;
+  background: rgba(147, 164, 255, 0.12);
+  border-color: rgba(147, 164, 255, 0.45);
+  color: #b3c0ff;
 }
 
 .chip.potion {
-  background: #1e2f24;
-  border-color: #3c6b4a;
-  color: #7ddc9b;
+  background: rgba(88, 211, 166, 0.1);
+  border-color: rgba(88, 211, 166, 0.4);
+  color: var(--jade);
 }
 
-.dim-chip {
-  background: #241b1b;
-  border-color: #5b3a3a;
-  color: #a06a72;
-}
-
-.dim {
-  color: var(--text-dim);
-  font-size: 11px;
+.chip.lost {
+  background: rgba(210, 85, 74, 0.1);
+  border-color: rgba(210, 85, 74, 0.4);
+  color: #c08480;
 }
 
 .conn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 11px;
   color: var(--danger);
+  white-space: nowrap;
+}
+
+.conn::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
 }
 
 .conn.ok {
-  color: var(--good);
+  color: var(--jade);
+}
+
+.viewer {
+  font-size: 11.5px;
+  white-space: nowrap;
 }
 
 .main {
   flex: 1;
   min-height: 0;
-  display: flex;
-  gap: 12px;
-  padding: 12px;
-  /* 滚动收在中间区域内部，保证底部操作区在任何视口高度下都不会被顶出屏幕 */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  padding: 14px;
   overflow: auto;
 }
 
-.main > :deep(.log) {
-  min-height: 0;
+/* 宽屏：圆桌在左当中，日志窄栏靠右，两边一起撑满高度 */
+@media (min-width: 1024px) {
+  .main {
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 460px);
+    align-items: stretch;
+    overflow: hidden;
+  }
 }
 
-@media (max-width: 980px) {
+@media (max-width: 480px) {
+  .bar {
+    gap: 6px;
+    padding: 8px 10px;
+  }
+
+  .brand {
+    font-size: 14.5px;
+  }
+
   .main {
-    flex-direction: column;
+    padding: 10px;
+    gap: 10px;
   }
 }
 </style>

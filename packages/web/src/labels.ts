@@ -1,4 +1,14 @@
-import type { DeathCause, Phase, SpeechContext } from '@lrs/shared';
+import type { DeathCause, Phase, Role, SpeechContext } from '@lrs/shared';
+
+/** 座位角标用的单字身份，比「预言家」这种全称省地方 */
+export const ROLE_GLYPHS: Record<Role, string> = {
+  werewolf: '狼',
+  seer: '预',
+  witch: '女',
+  hunter: '猎',
+  guard: '守',
+  villager: '民',
+};
 
 export const PHASE_LABELS: Record<Phase, string> = {
   SETUP: '准备',

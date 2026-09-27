@@ -8,6 +8,8 @@ export interface EventLine {
   day: number;
   tone: Tone;
   text: string;
+  /** 发言行要单独排版（说话人是日志里最要紧的信息） */
+  speech?: boolean;
 }
 
 /** 把引擎事件翻译成一句人话。这是纯展示层，不做任何推断。 */
@@ -52,6 +54,7 @@ export function formatEvent(event: GameEvent): EventLine {
       return {
         ...base,
         tone: 'normal',
+        speech: true,
         text: `${seatLabel(event.payload.seat)}（${SPEECH_CONTEXT_LABELS[event.payload.context]}）：${event.payload.text}`,
       };
 

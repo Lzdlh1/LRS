@@ -25,6 +25,7 @@ const canSpeak = computed(() => needsSpeech(pending.value));
 const isOver = computed(() => props.state?.winner != null);
 /** 玩家视角下，如果不是轮到自己，选项会是空的 */
 const observing = computed(() => pending.value !== null && pending.value.options.length === 0);
+const mine = computed(() => pending.value !== null && pending.value.options.length > 0);
 
 watch(pending, () => {
   speech.value = '';
@@ -47,8 +48,10 @@ function submitSpeech(): void {
         <span class="dim">对局已结束，可以点「新开一局」再来一把</span>
       </template>
       <template v-else-if="pending">
-        <span class="tag">轮到 {{ seatLabel(pending.seat) }}</span>
-        <span class="dim">{{ pending.options[0]?.label ?? '' }}</span>
+        <span class="tag" :class="{ active: mine }">
+          {{ mine ? '轮到你' : `轮到 ${seatLabel(pending.seat)}` }}
+        </span>
+        <span class="dim">{{ pending.options[0]?.label ?? '等这一手走完' }}</span>
       </template>
       <template v-else>
         <span class="dim">等待服务端推进…</span>
@@ -66,7 +69,7 @@ function submitSpeech(): void {
           placeholder="输入你的发言，回车或点发送提交"
           @keydown.enter.exact.prevent="submitSpeech"
         />
-        <button class="primary" :disabled="!speech.trim()" @click="submitSpeech">发送</button>
+        <button class="primary send" :disabled="!speech.trim()" @click="submitSpeech">发送</button>
       </div>
 
       <div v-if="choices.length > 0" class="choices">
@@ -81,10 +84,10 @@ function submitSpeech(): void {
     </div>
 
     <div class="debug">
-      <span class="dim">调试：</span>
-      <button class="ghost" :disabled="isOver" @click="emit('auto', 1)">代打一步</button>
-      <button class="ghost" :disabled="isOver" @click="emit('auto', 30)">代打 30 步</button>
-      <button class="ghost" @click="emit('newGame')">新开一局</button>
+      <span class="debug-label">调试</span>
+      <button class="ghost tiny" :disabled="isOver" @click="emit('auto', 1)">代打一步</button>
+      <button class="ghost tiny" :disabled="isOver" @click="emit('auto', 30)">代打 30 步</button>
+      <button class="ghost tiny" @click="emit('newGame')">新开一局</button>
     </div>
   </footer>
 </template>
@@ -93,11 +96,12 @@ function submitSpeech(): void {
 .panel {
   flex: none;
   border-top: 1px solid var(--line);
-  background: var(--panel);
-  padding: 10px 14px 12px;
+  background: linear-gradient(180deg, rgba(18, 22, 31, 0.96) 0%, rgba(10, 13, 20, 0.96) 100%);
+  backdrop-filter: blur(8px);
+  padding: 11px 14px 13px;
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 10px;
 }
 
 .status {
@@ -108,35 +112,42 @@ function submitSpeech(): void {
 }
 
 .tag {
-  padding: 3px 10px;
+  padding: 3px 11px;
   border-radius: 999px;
+  background: var(--panel-2);
+  border: 1px solid var(--line-2);
+  color: var(--text-dim);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.tag.active {
   background: #2a3350;
-  border: 1px solid #465089;
-  color: #9fb0ff;
-  font-size: 11px;
+  border-color: #4d5a94;
+  color: #cdd6ff;
 }
 
 .tag.success {
-  background: #12211c;
-  border-color: var(--good);
-  color: var(--good);
+  background: rgba(88, 211, 166, 0.12);
+  border-color: rgba(88, 211, 166, 0.5);
+  color: var(--jade);
 }
 
 .tag.danger {
-  background: #2a1a1c;
-  border-color: #7a3a3f;
+  background: rgba(210, 85, 74, 0.12);
+  border-color: rgba(210, 85, 74, 0.5);
   color: var(--danger);
 }
 
 .dim {
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: 11.5px;
 }
 
 .body {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 10px;
 }
 
 .speech {
@@ -147,26 +158,52 @@ function submitSpeech(): void {
 
 .speech textarea {
   flex: 1;
+  min-width: 0;
   resize: vertical;
 }
 
+.send {
+  flex: none;
+  align-self: stretch;
+  min-width: 64px;
+}
+
+/* 目标类按钮排成规整网格，比一行行乱折好看也好点 */
 .choices {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
   gap: 7px;
-  max-height: 132px;
+  max-height: 148px;
   overflow-y: auto;
 }
 
 .hint {
-  padding: 6px 0;
+  padding: 4px 0;
 }
 
 .debug {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding-top: 8px;
-  border-top: 1px dashed #262c3d;
+  padding-top: 9px;
+  border-top: 1px dashed #232a3a;
+  flex-wrap: wrap;
+}
+
+.debug-label {
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  color: var(--text-faint);
+}
+
+button.tiny {
+  padding: 4px 9px;
+  min-height: 26px;
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+button.tiny:hover:not(:disabled) {
+  opacity: 1;
 }
 </style>

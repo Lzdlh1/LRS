@@ -30,17 +30,22 @@ watch(() => liveText.value.length, scrollToBottom);
 <template>
   <section class="log">
     <header class="log-head">
-      <span>事件日志</span>
+      <span class="title">事件日志</span>
       <span v-if="streaming" class="live-tag">发言生成中…</span>
       <span class="count">{{ lines.length }}</span>
     </header>
     <div ref="box" class="log-body">
       <div v-if="lines.length === 0 && !streaming" class="empty">还没有事件</div>
-      <div v-for="line in lines" :key="line.key" class="line" :class="line.tone">
+      <div
+        v-for="line in lines"
+        :key="line.key"
+        class="line"
+        :class="[line.tone, { speech: line.speech }]"
+      >
         <span class="seq">{{ line.key }}</span>
         <span class="text">{{ line.text }}</span>
       </div>
-      <div v-if="streaming" class="line live">
+      <div v-if="streaming" class="line live speech">
         <span class="seq">✍</span>
         <span class="text">{{ streaming.seat }} 号：{{ liveText }}<i class="caret" /></span>
       </div>
@@ -50,13 +55,14 @@ watch(() => liveText.value.length, scrollToBottom);
 
 <style scoped>
 .log {
-  flex: 1;
-  min-width: 260px;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 160px;
   display: flex;
   flex-direction: column;
-  background: var(--panel);
+  background: linear-gradient(180deg, rgba(20, 25, 36, 0.9) 0%, rgba(14, 18, 27, 0.9) 100%);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius);
   overflow: hidden;
 }
 
@@ -64,31 +70,38 @@ watch(() => liveText.value.length, scrollToBottom);
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
-  border-bottom: 1px solid #262c3d;
+  padding: 9px 13px;
+  border-bottom: 1px solid var(--line);
+}
+
+.title {
+  font-family: var(--font-display);
+  font-size: 13.5px;
   font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--text);
 }
 
 .live-tag {
-  font-size: 10px;
-  font-weight: 400;
+  font-size: 10.5px;
   color: var(--accent);
 }
 
 .count {
   margin-left: auto;
+  font-family: var(--font-mono);
   color: var(--text-faint);
-  font-size: 10px;
-  font-weight: 400;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
 }
 
 .log-body {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 12px;
+  padding: 8px 12px 12px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
 }
 
 .empty {
@@ -97,17 +110,42 @@ watch(() => liveText.value.length, scrollToBottom);
 
 .line {
   display: flex;
-  gap: 8px;
-  font-size: 11.5px;
-  line-height: 1.65;
+  gap: 9px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  border-radius: var(--radius-sm);
 }
 
 .seq {
   flex: none;
-  width: 28px;
-  color: #414a63;
+  width: 26px;
+  padding-top: 2px;
+  font-family: var(--font-mono);
   font-size: 10px;
   text-align: right;
+  color: #3c465c;
+  font-variant-numeric: tabular-nums;
+}
+
+.text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* 发言是日志的主角：给一条月光，做成对白的样子 */
+.line.speech {
+  margin: 3px 0;
+  padding: 5px 9px;
+  background: rgba(147, 164, 255, 0.05);
+  border-left: 2px solid rgba(147, 164, 255, 0.45);
+}
+
+.line.speech .seq {
+  color: var(--accent-dim);
+}
+
+.line.speech .text {
+  color: #dfe5f5;
 }
 
 .line.muted .text {
@@ -115,7 +153,7 @@ watch(() => liveText.value.length, scrollToBottom);
 }
 
 .line.highlight .text {
-  color: #9fb0ff;
+  color: #a9b6ff;
 }
 
 .line.danger .text {
@@ -135,14 +173,14 @@ watch(() => liveText.value.length, scrollToBottom);
 }
 
 .line.live .text {
-  color: #c8d3ff;
+  color: #dfe5f5;
 }
 
 .caret {
   display: inline-block;
   width: 6px;
   height: 12px;
-  margin-left: 2px;
+  margin-left: 3px;
   vertical-align: -2px;
   background: var(--accent);
   animation: blink 1s step-end infinite;

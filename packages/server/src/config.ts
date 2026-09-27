@@ -27,6 +27,8 @@ export interface ServerConfig {
   logDir: string;
   logRetentionDays: number;
   dbPath: string;
+  /** 前端构建产物目录；存在就由这个服务一起托管，部署时只需要开一个端口 */
+  webDir: string;
   llm: LlmConfig;
 }
 
@@ -50,6 +52,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
     logDir: resolve(rootDir, env['LOG_DIR'] ?? 'logs'),
     logRetentionDays: positiveNumber(env['LOG_RETENTION_DAYS'], 7),
     dbPath: resolve(rootDir, env['DB_PATH'] ?? 'data/lrs.db'),
+    webDir: resolve(rootDir, env['WEB_DIR'] ?? 'packages/web/dist'),
     llm: {
       deepseekApiKey: env['DEEPSEEK_API_KEY'] ?? '',
       deepseekBaseUrl: env['DEEPSEEK_BASE_URL'] ?? 'https://api.deepseek.com/v1',

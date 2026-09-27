@@ -1,0 +1,23 @@
+{
+  "name": "lrs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "AI 狼人杀 —— 单人局（1 真人 + 8 AI）· 9 人预女猎守",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.2"
+  }
+}

@@ -1,4 +1,2 @@
-// core-engine：纯逻辑游戏引擎。
-// 约束：不读环境变量、不写文件、不发网络请求、不调 LLM、不处理超时。
-// 具体实现自 M1-2 起逐步加入。
-export {};
+export * from './board.ts';
+export * from './rules.ts';

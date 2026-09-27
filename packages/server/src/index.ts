@@ -67,6 +67,8 @@ function main(): void {
     wsLogger: logging.ws,
     store,
     aiLive: llm.live,
+    // 正式玩法默认就是玩家视角；想看全场底牌用界面右上角的开关切到上帝视角
+    defaultViewer: 1,
     hostFactory: ({ seatCount, names, onSpeechDelta }) =>
       createAgentHost({
         router: llm.router,

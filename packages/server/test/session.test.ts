@@ -120,17 +120,32 @@ describe('信息裁剪', () => {
     expect(other.state().witchPotions).toBeNull();
   });
 
-  it('行动选项只发给行动者本人与上帝', () => {
+  it('白天看得到轮到谁，但看不到别人能做什么', () => {
     const { room } = makeRoom();
     const god = collector();
     god.subscribe(room, 'god', 'god');
-    const actor = god.state().pending!.seat;
+
+    // 推到白天投票：夜间「轮到谁」是保密的，由另一个测试覆盖
+    for (let i = 0; i < 200; i += 1) {
+      const current = god.state().pending;
+      if (!current || god.state().winner !== null) break;
+      if (current.options[0]?.kind === 'vote') break;
+      const action = driveAction(current);
+      if (!action) break;
+      room.submit(action, 'client');
+    }
+
+    const pending = god.state().pending;
+    expect(pending?.options[0]?.kind).toBe('vote');
+
+    const actor = pending!.seat;
     const bystander = actor === 1 ? 2 : 1;
 
     const player = collector();
     player.subscribe(room, 'player', bystander);
 
     const state = player.state();
+    expect(state.masked).toBe(false);
     // 看得到轮到谁，但看不到他能做什么
     expect(state.pending?.seat).toBe(actor);
     expect(state.pending?.options).toEqual([]);
@@ -267,6 +282,71 @@ describe('持久化与重开', () => {
   });
 });
 
+describe('玩家视角的信息边界', () => {
+  /** 一路推到上警阶段（此时首夜死讯按变体 A 还没公布） */
+  function advanceToChiefSignup(room: GameRoom, god: Collector): void {
+    god.subscribe(room, 'god', 'god');
+    for (let i = 0; i < 60; i += 1) {
+      const pending = god.state().pending;
+      if (!pending || pending.options[0]?.kind === 'chief_signup') break;
+      const action = driveAction(pending);
+      if (!action) break;
+      room.submit(action, 'client');
+    }
+  }
+
+  it('夜间旁观者看不到「轮到谁」—— 否则夜间顺序 + 座位号就是身份', () => {
+    const { room } = makeRoom(2024);
+    const god = collector();
+    god.subscribe(room, 'god', 'god');
+
+    const pending = god.state().pending;
+    expect(pending).not.toBeNull();
+    expect(god.state().phase.startsWith('NIGHT_')).toBe(true);
+
+    const actor = pending!.seat;
+    const bystander = pending!.options[0]!.targets.find((seat) => seat !== actor)!;
+
+    const spy = collector();
+    spy.subscribe(room, 'spy', bystander);
+    expect(spy.state().masked).toBe(true);
+    expect(spy.state().pending).toBeNull();
+
+    // 行动者本人与上帝视角照常看得到
+    const self = collector();
+    self.subscribe(room, 'self', actor);
+    expect(self.state().masked).toBe(false);
+    expect(self.state().pending?.seat).toBe(actor);
+
+    expect(god.state().masked).toBe(false);
+    expect(god.state().pending?.seat).toBe(actor);
+  });
+
+  it('首夜死讯公布之前，玩家视角仍然把死者当作在场', () => {
+    const { room } = makeRoom(2024);
+    const god = collector();
+    advanceToChiefSignup(room, god);
+
+    const godView = god.state();
+    expect(godView.phase).toBe('CHIEF_SIGNUP');
+    const deadSeats = godView.seats.filter((seat) => !seat.alive).map((seat) => seat.seat);
+    expect(deadSeats.length, '首夜应该有人出局').toBeGreaterThan(0);
+
+    // 上帝视角看得到死亡与死因
+    const victim = godView.seats.find((seat) => seat.seat === deadSeats[0]!);
+    expect(victim?.deathCause).not.toBeNull();
+
+    // 玩家视角看不到 —— 变体 A 下首夜死者此时还要照常上警
+    const bystander = godView.seats.find((seat) => seat.alive && seat.seat !== 1)!.seat;
+    const player = collector();
+    player.subscribe(room, 'player', bystander);
+
+    const seen = player.state().seats.find((seat) => seat.seat === deadSeats[0]!);
+    expect(seen?.alive, '死讯未公布前，别人看到的他应该是活着的').toBe(true);
+    expect(seen?.deathCause).toBeNull();
+  });
+});
+
 /** 只记录调用时序的假 AI；真实 AI 的接线由 ai.test.ts 覆盖 */
 function timingHost(options: { delayMs: number; humanSeat: SeatId }) {
   const calls: { seat: SeatId; kind: string; at: number }[] = [];
@@ -296,6 +376,19 @@ function humanAction(pending: PendingRequest): Action | null {
     return { kind: 'speak', actor: pending.seat, text: '（真人）我先听听。' };
   }
   return null;
+}
+
+/**
+ * 自动推进用的动作。
+ * 夜里让女巫不用药、守卫守最高位，这样首夜一定有人出局 ——
+ * 否则「死讯公布前」这类测试就没有场景可测。
+ */
+function driveAction(pending: PendingRequest): Action | null {
+  const choices = choicesFor(pending);
+  if (choices.length === 0) return humanAction(pending);
+  const kind = pending.options[0]?.kind ?? '';
+  if (kind === 'witch_act' || kind === 'guard_protect') return choices[choices.length - 1]!.action;
+  return choices[0]!.action;
 }
 
 describe('并行预思考', () => {

@@ -26,6 +26,16 @@ const latestSpeech = computed(() => {
 
 const godView = computed(() => state.value?.viewer === 'god');
 
+/** 夜里旁观者不该看到「轮到谁」，阶段名也一并含糊掉 */
+const phaseLabel = computed(() => {
+  if (!state.value) return '';
+  return state.value.masked ? '夜晚' : PHASE_LABELS[state.value.phase];
+});
+
+const viewerLabel = computed(() =>
+  godView.value ? '上帝视角 · 全场可见' : `我的视角 · ${state.value?.viewer ?? 1} 号`,
+);
+
 function toggleViewer(): void {
   send({ type: 'setViewer', viewer: godView.value ? 1 : 'god' });
 }
@@ -49,15 +59,22 @@ function newGame(): void {
       <span class="brand">🐺 AI 狼人杀</span>
       <span class="dim">{{ state?.board ?? '连接中…' }}</span>
       <span v-if="state" class="chip">第 {{ state.day }} 天</span>
-      <span v-if="state" class="chip phase">{{ PHASE_LABELS[state.phase] }}</span>
+      <span v-if="state" class="chip phase">{{ phaseLabel }}</span>
       <span v-if="state?.chief.elected" class="chip chief">🎖 {{ state.chief.elected }} 号</span>
       <span v-else-if="state && !state.chief.badgeAlive" class="chip dim-chip">警徽已流失</span>
+      <span v-if="state?.witchPotions" class="chip potion">
+        🧪 解药 {{ state.witchPotions.antidote }} · 毒药 {{ state.witchPotions.poison }}
+      </span>
 
       <span class="spacer" />
 
       <span class="conn" :class="{ ok: connected }">{{ connected ? '● 已连接' : '○ 未连接' }}</span>
-      <button :class="{ primary: godView }" @click="toggleViewer">
-        {{ godView ? '上帝视角' : '玩家视角' }}
+      <button
+        :class="{ primary: godView }"
+        :title="godView ? '当前是上帝视角，点击切回自己的视角' : '当前是自己的视角，点击可看全场底牌（调试用）'"
+        @click="toggleViewer"
+      >
+        {{ viewerLabel }}
       </button>
       <button class="ghost" @click="newGame">新开一局</button>
     </header>
@@ -117,6 +134,12 @@ function newGame(): void {
   background: #2a3350;
   border-color: #465089;
   color: #9fb0ff;
+}
+
+.chip.potion {
+  background: #1e2f24;
+  border-color: #3c6b4a;
+  color: #7ddc9b;
 }
 
 .dim-chip {

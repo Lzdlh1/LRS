@@ -45,12 +45,19 @@ const roleBadge = (role: Role | null): string => (role ? ROLE_LABELS[role] : '?'
   <div class="table-wrap">
     <div class="table">
       <div class="stage">
-        <div class="stage-title">{{ state ? PHASE_LABELS[state.phase] : '连接中…' }}</div>
+        <div class="stage-title">
+          {{ state ? (state.masked ? '夜晚' : PHASE_LABELS[state.phase]) : '连接中…' }}
+        </div>
 
         <template v-if="state?.winner">
           <div class="stage-big" :class="state.winner === 'wolf' ? 'wolf' : 'good'">
             {{ state.winner === 'wolf' ? '狼人胜' : '好人胜' }}
           </div>
+        </template>
+
+        <template v-else-if="state?.masked">
+          <div class="stage-big">天黑请闭眼</div>
+          <div class="stage-sub">夜里发生的事，天亮才知道</div>
         </template>
 
         <template v-else-if="streaming">

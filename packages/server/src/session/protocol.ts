@@ -47,6 +47,14 @@ export interface ClientState {
     /** 行动者本人才有意义的绝对到期时间戳 */
     deadlineAt: number;
   } | null;
+  /**
+   * 这段过程不该被旁观者看到。
+   *
+   * 夜里谁在行动是致命信息 —— 夜间顺序是固定且公开的，
+   * 「现在轮到 8 号」等于直接告诉所有人 8 号是守卫。
+   * 为 true 时 pending 与阶段细节都不会下发。
+   */
+  masked: boolean;
   winner: Camp | null;
   lastSeq: number;
 }
@@ -85,21 +93,27 @@ export function projectState({ roomId, gameId, state, viewer, deadlineAt }: Proj
   const isGod = viewer === 'god';
   const viewerSeat = typeof viewer === 'number' ? viewer : null;
 
-  const seats: ClientSeat[] = state.players.map((player) => ({
-    seat: player.seat,
-    name: player.name,
-    isHuman: player.isHuman,
-    alive: player.death === null,
-    deathAnnounced: player.deathAnnounced,
-    deathCause: player.death?.cause ?? null,
-    isChief: player.isChief,
-    role: isGod || player.seat === viewerSeat ? player.role : null,
-  }));
+  const seats: ClientSeat[] = state.players.map((player) => {
+    // 死讯公布之前，对外仍是「在场」—— 与引擎的 onBoardSeats 同一口径。
+    // 否则夜里刚被刀的人会立刻在别人屏幕上变成灰色，狼刀结果提前泄露。
+    const revealed = isGod || player.death === null || player.deathAnnounced;
+    return {
+      seat: player.seat,
+      name: player.name,
+      isHuman: player.isHuman,
+      alive: revealed ? player.death === null : true,
+      deathAnnounced: player.deathAnnounced,
+      deathCause: revealed ? (player.death?.cause ?? null) : null,
+      isChief: player.isChief,
+      role: isGod || player.seat === viewerSeat ? player.role : null,
+    };
+  });
 
   const witchSeat = state.players.find((p) => p.role === 'witch')?.seat ?? null;
   const seesPotions = isGod || (viewerSeat !== null && viewerSeat === witchSeat);
   const isActor = state.pending !== null && state.pending.seat === viewerSeat;
   const seesOptions = isGod || isActor;
+  const masked = !isGod && !isActor && state.winner === null && state.phase.startsWith('NIGHT_');
 
   return {
     roomId,
@@ -116,14 +130,17 @@ export function projectState({ roomId, gameId, state, viewer, deadlineAt }: Proj
       withdrawn: [...state.chief.withdrawn],
     },
     witchPotions: seesPotions ? { ...state.witchPotions } : null,
-    pending: state.pending
-      ? {
-          seat: state.pending.seat,
-          options: seesOptions ? state.pending.options.map((o) => ({ ...o, targets: [...o.targets] })) : [],
-          deadlineMs: state.pending.deadlineMs,
-          deadlineAt: seesOptions ? deadlineAt : 0,
-        }
-      : null,
+    // masked 时连「轮到谁」都不下发，否则夜间顺序 + 座位号 = 身份
+    pending:
+      state.pending && !masked
+        ? {
+            seat: state.pending.seat,
+            options: seesOptions ? state.pending.options.map((o) => ({ ...o, targets: [...o.targets] })) : [],
+            deadlineMs: state.pending.deadlineMs,
+            deadlineAt: seesOptions ? deadlineAt : 0,
+          }
+        : null,
+    masked,
     winner: state.winner,
     lastSeq: state.seq,
   };

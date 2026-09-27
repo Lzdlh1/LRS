@@ -110,6 +110,7 @@ async function playGame(): Promise<void> {
   });
 
   console.log(`[开始] 新开一局；真人固定坐 ${HUMAN_SEAT} 号，其余交给 AI`);
+  const startedAt = Date.now();
   socket.send(JSON.stringify({ type: 'newGame' } satisfies ClientMessage));
 
   const deadline = Date.now() + TIMEOUT_MS;
@@ -117,8 +118,9 @@ async function playGame(): Promise<void> {
 
   const state = reader();
   const winner = state?.winner ?? null;
+  const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
   console.log(
-    `\n[结果] 胜方 = ${winner ?? '未结束（超时）'}；事件数 = ${eventCount}；发言 ${speeches.length} 条；流式片段 ${streamEvents} 个`,
+    `\n[结果] 胜方 = ${winner ?? '未结束（超时）'}；耗时 ${elapsed} 秒；事件数 = ${eventCount}；发言 ${speeches.length} 条；流式片段 ${streamEvents} 个`,
   );
   console.log(`[出局] ${deaths.join('、') || '无'}`);
 

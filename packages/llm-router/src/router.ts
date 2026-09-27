@@ -319,7 +319,8 @@ export class LlmRouter {
       degraded: usage.degraded,
       ok: usage.ok,
     };
-    if (usage.ok) this.logger?.debug('模型调用完成', fields);
+    // 每次调用的延迟与 token 是调优和成本看板的核心数据，用 info 级别记下来
+    if (usage.ok) this.logger?.info('模型调用完成', fields);
     else this.logger?.warn('模型调用最终失败', { ...fields, error: usage.error });
   }
 }

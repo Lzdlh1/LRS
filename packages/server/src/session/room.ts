@@ -1,8 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import type { AgentHost } from '@lrs/agent-host';
 import {
+  choicesFor,
+  concurrentBatch,
   createGame,
   eventsFor,
+  needsSpeech,
   pendingRequest,
   step,
   type EngineConfig,
@@ -65,6 +68,10 @@ export class GameRoom {
 
   private host: AgentHost | null = null;
   private aiToken = '';
+  /** 并行预思考的结果，key 是「天:阶段:座位」 */
+  private readonly prefetch = new Map<string, Promise<Action | null>>();
+  /** 已经批量发起过的「天:阶段」，避免同一阶段重复补发 */
+  private prefetchBatch = '';
   private currentGameId: string;
   private state: GameState;
   private history: GameEvent[] = [];
@@ -189,6 +196,8 @@ export class GameRoom {
     this.finished = false;
     this.history = [];
     this.aiToken = '';
+    this.prefetch.clear();
+    this.prefetchBatch = '';
 
     const rng = seed === undefined ? Math.random : mulberry32(seed);
     const result = createGame({ humanSeats: [1], rules: this.rules, rng });
@@ -319,9 +328,13 @@ export class GameRoom {
    */
   private scheduleAi(): void {
     const host = this.host;
-    const pending = pendingRequest(this.state);
+    if (!host) return;
 
-    if (!host || !pending || !host.handles(pending.seat)) {
+    // 预思考要在「轮到真人」时也照跑 —— 真人思考的这段时间正是它存在的意义
+    this.startPrefetch(host);
+
+    const pending = pendingRequest(this.state);
+    if (!pending || !host.handles(pending.seat)) {
       this.aiToken = '';
       return;
     }
@@ -333,23 +346,113 @@ export class GameRoom {
     void this.runAiTurn(pending);
   }
 
+  /**
+   * 并行预思考。
+   *
+   * 上警、退水这类阶段的待办彼此独立（规则上本来就是同时发生的），
+   * 所以一进入这些阶段就把所有 AI 座位的决策一起发出去。
+   * 真人玩家思考的这段时间正好被 AI 用来「想」—— 他一点下去，后面几位几乎立刻过完。
+   *
+   * 每个「天:阶段」只批量发起一次：否则某个座位的结果被消费掉之后，
+   * 下一次调用又会把它当成「还没想过」而重复发一遍。
+   *
+   * 发言与投票**不做**预思考：后发言的人必须听到前面说了什么，
+   * 后投票的人看得到已亮出的票型，提前算就是让 AI 凭空猜。
+   */
+  private startPrefetch(host: AgentHost): void {
+    const batch = concurrentBatch(this.state);
+    if (!batch) {
+      this.prefetch.clear();
+      this.prefetchBatch = '';
+      return;
+    }
+
+    const batchId = `${this.state.day}:${this.state.phase}`;
+    if (this.prefetchBatch === batchId) return;
+    this.prefetchBatch = batchId;
+    this.prefetch.clear();
+
+    for (const item of batch) {
+      if (!host.handles(item.seat)) continue;
+
+      const request: PendingRequest = {
+        seat: item.seat,
+        options: item.options,
+        deadlineMs: item.deadlineMs,
+      };
+      this.prefetch.set(
+        this.prefetchKey(item.seat),
+        host.act(this.state, request).catch((error: unknown) => {
+          // 预思考失败不算事故：轮到它时走正常路径重新决策
+          this.logger.warn('预思考失败，轮到该座位时会重新决策', {
+            seat: item.seat,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return null;
+        }),
+      );
+    }
+
+    this.logger.debug('并行预思考已发起', { batchId, seats: batch.length });
+  }
+
+  private prefetchKey(seat: SeatId): string {
+    return `${this.state.day}:${this.state.phase}:${seat}`;
+  }
+
+  /**
+   * 取出这一手的行动：优先复用预思考结果。
+   * 但必须先确认它仍是当前合法选项之一 —— 局面万一变了就退回正常路径。
+   */
+  private async resolveAction(host: AgentHost, pending: PendingRequest): Promise<Action> {
+    const key = this.prefetchKey(pending.seat);
+    const cached = this.prefetch.get(key);
+    if (!cached) return host.act(this.state, pending);
+
+    this.prefetch.delete(key);
+    const action = await cached;
+    if (action && this.isStillAllowed(pending, action)) {
+      this.logger.debug('复用预思考结果', { seat: pending.seat, kind: action.kind });
+      return action;
+    }
+
+    this.logger.debug('预思考结果已不适用，改为当场决策', { seat: pending.seat });
+    return host.act(this.state, pending);
+  }
+
+  /**
+   * 这个行动还算不算当前待办的合法选择。
+   *
+   * 非发言阶段直接比对按钮摊平出来的合法动作；发言阶段没有按钮，
+   * 只要求「是这个座位在发言」—— 少了这一支，AI 的发言会被全部误丢弃。
+   */
+  private isStillAllowed(pending: PendingRequest, action: Action): boolean {
+    if (needsSpeech(pending)) return action.kind === 'speak' && action.actor === pending.seat;
+
+    const signature = JSON.stringify(action);
+    return choicesFor(pending).some((choice) => JSON.stringify(choice.action) === signature);
+  }
+
   private async runAiTurn(pending: PendingRequest): Promise<void> {
     const host = this.host;
     if (!host) return;
 
     const startedAt = Date.now();
     try {
-      const action = await host.act(this.state, pending);
+      const action = await this.resolveAction(host, pending);
 
       // 不管这次行动最终会不会被采纳，都要告诉前端「这段打字机结束」，避免光标一直闪
       if (action.kind === 'speak') this.broadcastStreamDone(pending.seat);
 
-      // 模型思考期间局面可能已经变了（比如人工代打或超时兜底先提交了），先确认再提交
+      // 模型思考期间局面可能已经变了（比如人工代打或超时兜底先提交了），先确认再提交。
+      // 只比座位号不够 —— 同一个座位可能在下一个阶段又被点到，
+      // 那时上一阶段的行动（比如夜里的刀人）会被误当成当前阶段的行动提交。
       const current = pendingRequest(this.state);
-      if (!current || current.seat !== pending.seat) {
-        this.logger.warn('AI 想好了但局面已变，丢弃这次行动', {
+      if (!current || current.seat !== pending.seat || !this.isStillAllowed(current, action)) {
+        this.logger.warn('AI 想好了但这一手已不适用，丢弃', {
           seat: pending.seat,
           kind: action.kind,
+          currentKind: current?.options[0]?.kind ?? null,
           costMs: Date.now() - startedAt,
         });
         return;

@@ -1,5 +1,6 @@
-import type { Viewer } from '@lrs/core-engine';
-import { createLogger, nullSink } from '@lrs/shared';
+import type { AgentHost } from '@lrs/agent-host';
+import { choicesFor, type PendingRequest, type Viewer } from '@lrs/core-engine';
+import { createLogger, nullSink, type Action, type SeatId } from '@lrs/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ClientState, ServerMessage } from '../src/session/protocol.ts';
 import { GameRoom } from '../src/session/room.ts';
@@ -263,5 +264,95 @@ describe('持久化与重开', () => {
     expect(god.messages.length).toBeGreaterThan(messagesBefore);
     expect(god.state().lastSeq).toBeGreaterThan(0);
     expect(god.state().winner).toBeNull();
+  });
+});
+
+/** 只记录调用时序的假 AI；真实 AI 的接线由 ai.test.ts 覆盖 */
+function timingHost(options: { delayMs: number; humanSeat: SeatId }) {
+  const calls: { seat: SeatId; kind: string; at: number }[] = [];
+  const host = {
+    observe: (): void => {},
+    handles: (seat: SeatId): boolean => seat !== options.humanSeat,
+    act: async (_state: unknown, pending: PendingRequest): Promise<Action> => {
+      calls.push({ seat: pending.seat, kind: pending.options[0]?.kind ?? '?', at: Date.now() });
+      await new Promise((resolve) => setTimeout(resolve, options.delayMs));
+      const choice = choicesFor(pending)[0];
+      // 发言不生成按钮，假 AI 自己编一句
+      if (!choice) return { kind: 'speak', actor: pending.seat, text: `（假 AI）${pending.seat} 号发言` };
+      return choice.action;
+    },
+  };
+  // AgentHost 带私有字段，结构类型无法直接赋值，测试里显式转换
+  return { host: host as unknown as AgentHost, calls };
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** 真人座位能提交的动作：有按钮点第一个，要发言就编一句 */
+function humanAction(pending: PendingRequest): Action | null {
+  const choice = choicesFor(pending)[0];
+  if (choice) return choice.action;
+  if (pending.options[0]?.kind === 'speak') {
+    return { kind: 'speak', actor: pending.seat, text: '（真人）我先听听。' };
+  }
+  return null;
+}
+
+describe('并行预思考', () => {
+  it('轮到真人时 8 个 AI 已并行想完，真人一点后面立刻过完', async () => {
+    const { host, calls } = timingHost({ delayMs: 80, humanSeat: 1 });
+    const room = new GameRoom({ logger, store: null, hostFactory: () => host });
+    rooms.push(room);
+
+    const god = collector();
+    god.subscribe(room, 'god', 'god');
+
+    // 先把首夜走完，走到上警阶段
+    for (let i = 0; i < 60; i += 1) {
+      const pending = god.state().pending;
+      if (!pending || pending.options[0]?.kind === 'chief_signup') break;
+      const action = humanAction(pending);
+      if (!action) break;
+      room.submit(action, 'client');
+    }
+
+    const pending = god.state().pending;
+    expect(pending?.options[0]?.kind).toBe('chief_signup');
+    expect(pending?.seat).toBe(1);
+
+    // 关键断言：真人（1 号）还一个字没回，2~9 号的决策已经全部发出去了
+    const signupCalls = calls.filter((call) => call.kind === 'chief_signup');
+    expect(signupCalls.map((call) => call.seat).sort((a, b) => a - b)).toEqual([2, 3, 4, 5, 6, 7, 8, 9]);
+
+    const spread = Math.max(...signupCalls.map((call) => call.at)) - Math.min(...signupCalls.map((call) => call.at));
+    expect(spread, `8 次决策发起时间跨度为 ${spread}ms，若串行发起会超过 600ms`).toBeLessThan(200);
+
+    // 真人点下去之后，2~9 号复用预思考结果，不再产生新的决策调用
+    room.submit(humanAction(pending!)!, 'client');
+    await sleep(200);
+    expect(calls.filter((call) => call.kind === 'chief_signup')).toHaveLength(signupCalls.length);
+  });
+
+  it('发言阶段不做预思考：同时只会有一个人在发言决策上', async () => {
+    const { host, calls } = timingHost({ delayMs: 40, humanSeat: 1 });
+    const room = new GameRoom({ logger, store: null, hostFactory: () => host });
+    rooms.push(room);
+
+    const god = collector();
+    god.subscribe(room, 'god', 'god');
+
+    // 走到第一次「AI 发言」
+    for (let i = 0; i < 200; i += 1) {
+      const pending = god.state().pending;
+      if (!pending || god.state().winner !== null) break;
+      if (pending.options[0]?.kind === 'speak' && pending.seat !== 1) break;
+      const action = humanAction(pending);
+      if (!action) break;
+      room.submit(action, 'client');
+    }
+
+    const speakCalls = calls.filter((call) => call.kind === 'speak');
+    // 若发言被误当成可并行阶段，这里会一次冒出 8 个
+    expect(speakCalls.length, `发言阶段同时发起了 ${speakCalls.length} 个决策`).toBeLessThanOrEqual(2);
   });
 });

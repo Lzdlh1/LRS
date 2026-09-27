@@ -166,3 +166,42 @@ export function hunterShootOptions(state: GameState, hunterSeat: SeatId): Action
     },
   ];
 }
+
+export interface ConcurrentRequest {
+  seat: SeatId;
+  options: ActionOption[];
+  deadlineMs: number;
+}
+
+/**
+ * 当前阶段剩下的待办能不能**一次性全问完**。
+ *
+ * 上警与退水在规则上是同时发生的：每个人决定时并不知道别人怎么选，
+ * 所以这些待办彼此独立，可以并行收集（也是调用方「预思考」的依据）。
+ *
+ * 发言与投票**不能**这么做 —— 后发言的人必须听到前面说了什么，
+ * 后投票的人看得到已经亮出的票型，这些依赖是规则的一部分。
+ *
+ * 返回 null 表示这个阶段只能一个一个来。
+ */
+export function concurrentBatch(state: GameState): ConcurrentRequest[] | null {
+  switch (state.phase) {
+    case 'CHIEF_SIGNUP': {
+      const seats = onBoardSeats(state).filter((seat) => !state.chief.signupAnswered.includes(seat));
+      return seats.map((seat) => ({
+        seat,
+        options: chiefSignupOptions(),
+        deadlineMs: state.rules.timeoutMs.chiefSignup,
+      }));
+    }
+    case 'CHIEF_WITHDRAW': {
+      return state.chief.withdrawQueue.map((seat) => ({
+        seat,
+        options: chiefWithdrawOptions(),
+        deadlineMs: state.rules.timeoutMs.chiefSignup,
+      }));
+    }
+    default:
+      return null;
+  }
+}

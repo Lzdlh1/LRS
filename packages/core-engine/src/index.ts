@@ -3,5 +3,6 @@ export * from './rules.ts';
 export * from './types.ts';
 export * from './events.ts';
 export * from './visibility.ts';
+export * from './choices.ts';
 export * from './options.ts';
 export * from './machine.ts';

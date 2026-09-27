@@ -1,0 +1,15 @@
+{
+  "name": "@lrs/agent-host",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@lrs/core-engine": "*",
+    "@lrs/llm-router": "*",
+    "@lrs/shared": "*",
+    "zod": "^4.6.5"
+  }
+}

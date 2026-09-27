@@ -204,6 +204,8 @@ export function isOver(state: GameState): boolean {
 
 function drive(state: GameState, events: GameEvent[]): void {
   let steps = 0;
+  let announced = state.pending;
+
   // 用「阶段是否已到 GAME_OVER」作为终止条件，而不是 winner ——
   // 因为 winner 可能在结算途中就被置上，此时还需要走完公布与结算流程。
   while (state.phase !== 'GAME_OVER' && state.pending === null) {
@@ -212,7 +214,29 @@ function drive(state: GameState, events: GameEvent[]): void {
       throw new Error(`状态机推进超过 ${MAX_DRIVE_STEPS} 步，疑似死循环（当前阶段 ${state.phase}）`);
     }
     advanceOnce(state, events);
+
+    // 新的待办一旦产生就记进事件流，让整局日志自包含（复盘与 AI 记忆都靠它）
+    // 这里通过函数读取，避免 TS 沿用循环条件里的收窄结果
+    const next = readPending(state);
+    if (next !== null && next !== announced) {
+      announced = next;
+      emit(
+        state,
+        events,
+        {
+          t: 'action_requested',
+          seat: next.seat,
+          options: next.options,
+          deadlineMs: next.deadlineMs,
+        },
+        seatsVisible(next.seat),
+      );
+    }
   }
+}
+
+function readPending(state: GameState): PendingRequest | null {
+  return state.pending;
 }
 
 function goTo(state: GameState, events: GameEvent[], phase: Phase): void {

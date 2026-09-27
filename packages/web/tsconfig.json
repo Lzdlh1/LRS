@@ -21,6 +21,7 @@
 
     "paths": {
       "@lrs/shared": ["../shared/src/index.ts"],
+      "@lrs/core-engine": ["../core-engine/src/index.ts"],
       "@lrs/server/protocol": ["../server/src/session/protocol.ts"],
       "@/*": ["./src/*"]
     }

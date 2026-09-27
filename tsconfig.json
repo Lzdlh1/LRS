@@ -26,7 +26,8 @@
     "paths": {
       "@lrs/shared": ["./packages/shared/src/index.ts"],
       "@lrs/core-engine": ["./packages/core-engine/src/index.ts"],
-      "@lrs/llm-router": ["./packages/llm-router/src/index.ts"]
+      "@lrs/llm-router": ["./packages/llm-router/src/index.ts"],
+      "@lrs/agent-host": ["./packages/agent-host/src/index.ts"]
     }
   },
   "include": ["packages/**/*.ts", "vitest.config.ts"],

@@ -1,8 +1,8 @@
 <script setup lang="ts">
+import { choicesFor, needsSpeech } from '@lrs/core-engine';
 import type { Action } from '@lrs/shared';
 import type { ClientState } from '@lrs/server/protocol';
 import { computed, ref, watch } from 'vue';
-import { choicesFor, needsSpeech } from '../choices';
 import { seatLabel } from '../labels';
 
 const props = defineProps<{
@@ -20,8 +20,8 @@ const emit = defineEmits<{
 const speech = ref('');
 
 const pending = computed(() => props.state?.pending ?? null);
-const choices = computed(() => choicesFor(props.state));
-const canSpeak = computed(() => needsSpeech(props.state));
+const choices = computed(() => choicesFor(pending.value));
+const canSpeak = computed(() => needsSpeech(pending.value));
 const isOver = computed(() => props.state?.winner != null);
 /** 玩家视角下，如果不是轮到自己，选项会是空的 */
 const observing = computed(() => pending.value !== null && pending.value.options.length === 0);

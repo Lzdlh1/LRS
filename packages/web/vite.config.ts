@@ -10,6 +10,7 @@ export default defineConfig({
     alias: {
       // 直接指向源码，省掉构建步骤；与 vitest.config.ts 的别名保持一致
       '@lrs/shared': resolvePath('../shared/src/index.ts'),
+      '@lrs/core-engine': resolvePath('../core-engine/src/index.ts'),
       '@': resolvePath('./src'),
     },
   },

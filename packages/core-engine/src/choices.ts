@@ -1,36 +1,37 @@
-import type { Action, ActionOption, WitchUse } from '@lrs/shared';
-import type { ClientState } from '@lrs/server/protocol';
-import { seatLabel } from './labels';
+import type { Action, ActionOption, SeatId, WitchUse } from '@lrs/shared';
+import type { PendingRequest } from './types.ts';
 
-export interface Choice {
+export interface ActionChoice {
   key: string;
+  /** 给人看的一句话 */
   label: string;
   action: Action;
 }
 
 /** 当前待办是否需要玩家自己输入发言文本 */
-export function needsSpeech(state: ClientState | null): boolean {
-  return state?.pending?.options.some((option) => option.kind === 'speak') ?? false;
+export function needsSpeech(pending: PendingRequest | null): boolean {
+  return pending?.options.some((option) => option.kind === 'speak') ?? false;
 }
 
+const seatLabel = (seat: SeatId): string => `${seat} 号`;
+
 /**
- * 把引擎给的选项摊平成一组「点一下就提交」的按钮。
+ * 把引擎给的选项摊平成一组「可直接提交的动作」。
  *
- * 选项本身来自引擎，所以这里生成的每个 Choice 都必定合法 ——
- * 前端不需要、也不应该知道规则。
+ * 前端按钮和 AI 决策共用这一份 —— 两处各写一套迟早会漂移，
+ * 而且这里生成的每个 Action 都来自引擎给的合法选项，天然不会非法。
  */
-export function choicesFor(state: ClientState | null): Choice[] {
-  const pending = state?.pending;
+export function choicesFor(pending: PendingRequest | null): ActionChoice[] {
   if (!pending || pending.options.length === 0) return [];
 
   const actor = pending.seat;
-  const choices: Choice[] = [];
+  const choices: ActionChoice[] = [];
 
   const seatChoices = (
     option: ActionOption,
     prefix: string,
-    label: (seat: number) => string,
-    build: (seat: number) => Action,
+    label: (seat: SeatId) => string,
+    build: (seat: SeatId) => Action,
   ): void => {
     for (const target of option.targets) {
       choices.push({ key: `${prefix}-${target}`, label: label(target), action: build(target) });
@@ -87,7 +88,11 @@ export function choicesFor(state: ClientState | null): Choice[] {
         break;
 
       case 'chief_transfer':
-        choices.push({ key: 'transfer-destroy', label: '撕毁警徽', action: { kind: 'chief_transfer', actor, target: null } });
+        choices.push({
+          key: 'transfer-destroy',
+          label: '撕毁警徽',
+          action: { kind: 'chief_transfer', actor, target: null },
+        });
         seatChoices(
           option,
           'transfer',

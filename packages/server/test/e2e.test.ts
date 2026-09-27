@@ -7,6 +7,7 @@ import type { GameEvent } from '@lrs/shared';
 import { createLogger, nullSink } from '@lrs/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ServerConfig } from '../src/config.ts';
+import { loadConfig } from '../src/config.ts';
 import type { ServerMessage } from '../src/session/protocol.ts';
 import { startServer, type RunningServer } from '../src/server.ts';
 
@@ -76,13 +77,12 @@ interface Harness {
 }
 
 async function start(): Promise<Harness> {
+  const base = loadConfig({}, tempDir());
   const config: ServerConfig = {
-    host: '127.0.0.1',
+    ...base,
     port: 0,
     logLevel: 'error',
-    logPrompts: false,
     logDir: tempDir(),
-    logRetentionDays: 7,
     dbPath: join(tempDir(), 'e2e.db'),
   };
 

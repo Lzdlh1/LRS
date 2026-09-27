@@ -3,7 +3,7 @@ import type { Logger } from '@lrs/shared';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { ServerConfig } from './config.ts';
 import type { ClientMessage, ServerMessage } from './session/protocol.ts';
-import { GameRoom } from './session/room.ts';
+import { GameRoom, type AgentHostFactory } from './session/room.ts';
 import type { GameStore } from './store/gameStore.ts';
 
 export interface StartServerOptions {
@@ -11,6 +11,10 @@ export interface StartServerOptions {
   logger: Logger;
   wsLogger: Logger;
   store: GameStore | null;
+  /** 传入就由 AI 接管非真人座位；不传就是纯手动模式 */
+  hostFactory?: AgentHostFactory;
+  /** 模型是否已配置好（只用于健康检查展示） */
+  aiLive?: boolean;
   /** 新连接的默认视角。默认上帝视角方便开发调试，M4 会改成玩家视角。 */
   defaultViewer?: 'god' | number;
 }
@@ -25,7 +29,11 @@ export function startServer(options: StartServerOptions): RunningServer {
   const { config, logger, wsLogger, store } = options;
   const defaultViewer = options.defaultViewer ?? 'god';
 
-  const room = new GameRoom({ logger: wsLogger.child('room'), store });
+  const room = new GameRoom({
+    logger: wsLogger.child('room'),
+    store,
+    hostFactory: options.hostFactory,
+  });
   let channelSeq = 0;
 
   const server = createServer((req, res) => {
@@ -36,6 +44,7 @@ export function startServer(options: StartServerOptions): RunningServer {
         ok: true,
         roomId: room.roomId,
         subscribers: room.subscriberCount,
+        ai: options.aiLive ?? false,
         defaultViewer,
         uptimeSeconds: Math.round(process.uptime()),
       });

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { AgentHost } from '@lrs/agent-host';
 import {
   createGame,
   eventsFor,
@@ -6,6 +7,7 @@ import {
   step,
   type EngineConfig,
   type GameState,
+  type PendingRequest,
   type Viewer,
 } from '@lrs/core-engine';
 import type { Action, GameEvent, Logger } from '@lrs/shared';
@@ -19,11 +21,16 @@ export interface Subscriber {
   send: (message: ServerMessage) => void;
 }
 
+/** 每开一局都要重建 AI（记忆不能跨局残留） */
+export type AgentHostFactory = (input: { seatCount: number; names: string[] }) => AgentHost;
+
 export interface GameRoomOptions {
   logger: Logger;
   store: GameStore | null;
   rules?: EngineConfig['rules'];
   id?: string;
+  /** 不传就是纯手动模式（M2 的调试玩法） */
+  hostFactory?: AgentHostFactory;
 }
 
 /** 确定性随机源，便于用固定种子复现一局 */
@@ -49,7 +56,10 @@ export class GameRoom {
   private readonly logger: Logger;
   private readonly store: GameStore | null;
   private readonly rules: EngineConfig['rules'];
+  private readonly hostFactory: AgentHostFactory | undefined;
 
+  private host: AgentHost | null = null;
+  private aiToken = '';
   private currentGameId: string;
   private state: GameState;
   private history: GameEvent[] = [];
@@ -63,9 +73,11 @@ export class GameRoom {
     this.logger = options.logger;
     this.store = options.store;
     this.rules = options.rules;
+    this.hostFactory = options.hostFactory;
     this.currentGameId = randomUUID();
     this.state = this.startNewGame();
     this.armTimer();
+    this.scheduleAi();
   }
 
   /** 当前这一局的 id（重开一局会变） */
@@ -140,6 +152,7 @@ export class GameRoom {
     this.record(result.events);
     this.checkFinished();
     this.broadcast(result.events);
+    this.scheduleAi();
   }
 
   /** 调试面板用：连续代打若干步 */
@@ -157,6 +170,7 @@ export class GameRoom {
     this.state = this.startNewGame(seed);
     this.armTimer();
     for (const subscriber of this.subscribers.values()) this.sendSnapshot(subscriber, 0);
+    this.scheduleAi();
   }
 
   dispose(): void {
@@ -169,19 +183,30 @@ export class GameRoom {
   private startNewGame(seed?: number): GameState {
     this.finished = false;
     this.history = [];
+    this.aiToken = '';
 
     const rng = seed === undefined ? Math.random : mulberry32(seed);
     const result = createGame({ humanSeats: [1], rules: this.rules, rng });
     this.history.push(...result.events);
 
     this.logger.info('新对局开始', {
-      gameId: this.gameId,
+      gameId: this.currentGameId,
       board: result.state.board.name,
       seed: seed ?? null,
       day: result.state.day,
       phase: result.state.phase,
+      aiSeats: this.hostFactory ? result.state.players.filter((p) => !p.isHuman).length : 0,
     });
     this.logEvents(result.events);
+
+    // AI 的记忆不能跨局，所以每局重建一次
+    this.host = this.hostFactory
+      ? this.hostFactory({
+          seatCount: result.state.board.seatCount,
+          names: result.state.players.map((player) => player.name),
+        })
+      : null;
+    this.host?.observe(result.events);
 
     if (this.store) {
       try {
@@ -211,12 +236,13 @@ export class GameRoom {
     return result.state;
   }
 
-  /** 把新产生的事件记进内存历史、写日志、落库 */
+  /** 把新产生的事件记进内存历史、写日志、落库，并喂给所有 AI */
   private record(newEvents: readonly GameEvent[]): void {
     if (newEvents.length === 0) return;
     this.history.push(...newEvents);
     this.logEvents(newEvents);
     this.persist(newEvents);
+    this.host?.observe(newEvents);
   }
 
   private checkFinished(): void {
@@ -253,6 +279,13 @@ export class GameRoom {
     }
 
     const seat = pending.seat;
+
+    // AI 的节奏由模型路由层的超时与降级控制，这里不再叠一层定时器
+    if (this.host?.handles(seat)) {
+      this.deadlineAt = 0;
+      return;
+    }
+
     this.deadlineAt = Date.now() + pending.deadlineMs;
     this.timer = setTimeout(() => {
       const current = pendingRequest(this.state);
@@ -269,6 +302,64 @@ export class GameRoom {
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
+    }
+  }
+
+  /**
+   * 如果当前轮到 AI，就让它去思考。
+   *
+   * 用 `seq:seat` 做去重令牌：同一轮待办只会触发一次，
+   * 换阶段或换人之后令牌自然失效，不会重复调用模型。
+   */
+  private scheduleAi(): void {
+    const host = this.host;
+    const pending = pendingRequest(this.state);
+
+    if (!host || !pending || !host.handles(pending.seat)) {
+      this.aiToken = '';
+      return;
+    }
+
+    const token = `${this.state.seq}:${pending.seat}`;
+    if (this.aiToken === token) return;
+    this.aiToken = token;
+
+    void this.runAiTurn(pending);
+  }
+
+  private async runAiTurn(pending: PendingRequest): Promise<void> {
+    const host = this.host;
+    if (!host) return;
+
+    const startedAt = Date.now();
+    try {
+      const action = await host.act(this.state, pending);
+
+      // 模型思考期间局面可能已经变了（比如人工代打或超时兜底先提交了），先确认再提交
+      const current = pendingRequest(this.state);
+      if (!current || current.seat !== pending.seat) {
+        this.logger.warn('AI 想好了但局面已变，丢弃这次行动', {
+          seat: pending.seat,
+          kind: action.kind,
+          costMs: Date.now() - startedAt,
+        });
+        return;
+      }
+
+      this.logger.info('AI 完成思考', {
+        seat: pending.seat,
+        kind: action.kind,
+        costMs: Date.now() - startedAt,
+      });
+      this.submit(action, 'ai');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('AI 行动失败，改用兜底动作', { seat: pending.seat, error: message });
+
+      const current = pendingRequest(this.state);
+      if (current && current.seat === pending.seat) {
+        this.submit(defaultActionFor(current), 'ai-fallback');
+      }
     }
   }
 

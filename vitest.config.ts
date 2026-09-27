@@ -9,6 +9,7 @@ export default defineConfig({
       '@lrs/shared': resolvePkg('./packages/shared/src/index.ts'),
       '@lrs/core-engine': resolvePkg('./packages/core-engine/src/index.ts'),
       '@lrs/llm-router': resolvePkg('./packages/llm-router/src/index.ts'),
+      '@lrs/agent-host': resolvePkg('./packages/agent-host/src/index.ts'),
     },
   },
   test: {

@@ -12,7 +12,9 @@
     "dev": "node --watch src/index.ts"
   },
   "dependencies": {
+    "@lrs/agent-host": "*",
     "@lrs/core-engine": "*",
+    "@lrs/llm-router": "*",
     "@lrs/shared": "*",
     "ws": "^8.22.0"
   }

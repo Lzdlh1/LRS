@@ -4,10 +4,12 @@ import { ROLE_LABELS } from '@lrs/shared';
 import type { ClientState } from '@lrs/server/protocol';
 import { computed } from 'vue';
 import { PHASE_LABELS } from '../labels';
+import type { LiveSpeech } from '../ws';
 
 const props = defineProps<{
   state: ClientState | null;
   latest: { seat: number; text: string } | null;
+  streaming: LiveSpeech | null;
 }>();
 
 const SEAT_SIZE = 46;
@@ -29,6 +31,13 @@ const placed = computed(() => {
 
 const pendingSeat = computed(() => props.state?.pending?.seat ?? null);
 
+/** 待办落在 AI 身上时是「思考中」，落在真人身上才是「等待」 */
+const pendingIsAi = computed(() => {
+  const seat = pendingSeat.value;
+  if (seat === null) return false;
+  return props.state?.seats.find((item) => item.seat === seat)?.isHuman === false;
+});
+
 const roleBadge = (role: Role | null): string => (role ? ROLE_LABELS[role] : '?');
 </script>
 
@@ -37,22 +46,32 @@ const roleBadge = (role: Role | null): string => (role ? ROLE_LABELS[role] : '?'
     <div class="table">
       <div class="stage">
         <div class="stage-title">{{ state ? PHASE_LABELS[state.phase] : '连接中…' }}</div>
+
         <template v-if="state?.winner">
           <div class="stage-big" :class="state.winner === 'wolf' ? 'wolf' : 'good'">
             {{ state.winner === 'wolf' ? '狼人胜' : '好人胜' }}
           </div>
         </template>
+
+        <template v-else-if="streaming">
+          <div class="stage-big">{{ streaming.seat }} 号发言中</div>
+          <div class="dots"><i /><i /><i /></div>
+        </template>
+
         <template v-else-if="state?.pending">
-          <div class="stage-big">等待 {{ state.pending.seat }} 号</div>
+          <div class="stage-big">
+            {{ pendingIsAi ? `${state.pending.seat} 号思考中` : `等待 ${state.pending.seat} 号` }}
+          </div>
           <div class="stage-sub">
             {{ state.pending.options[0]?.label ?? '行动中（非你的视角）' }}
           </div>
         </template>
+
         <template v-else>
           <div class="stage-sub">结算中…</div>
         </template>
 
-        <div v-if="latest" class="stage-speech">
+        <div v-if="latest && !streaming" class="stage-speech">
           <b>{{ latest.seat }} 号</b>：{{ latest.text }}
         </div>
       </div>
@@ -63,6 +82,7 @@ const roleBadge = (role: Role | null): string => (role ? ROLE_LABELS[role] : '?'
         class="seat"
         :class="{
           pending: item.seat === pendingSeat,
+          speaking: item.seat === streaming?.seat,
           dead: !item.alive,
           me: state?.viewer === item.seat,
           chief: item.isChief,
@@ -203,6 +223,55 @@ const roleBadge = (role: Role | null): string => (role ? ROLE_LABELS[role] : '?'
   border-color: var(--accent);
   background: #3a4568;
   box-shadow: 0 0 0 4px rgba(124, 140, 255, 0.18);
+}
+
+.seat.speaking {
+  border-color: #9fb0ff;
+  animation: speaking 1.1s ease-in-out infinite;
+}
+
+@keyframes speaking {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px rgba(124, 140, 255, 0.18);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(124, 140, 255, 0.32);
+  }
+}
+
+.dots {
+  display: flex;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: dot 1.2s ease-in-out infinite;
+}
+
+.dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes dot {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
 }
 
 .seat.dead {

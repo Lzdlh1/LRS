@@ -10,7 +10,7 @@ import {
   type PendingRequest,
   type Viewer,
 } from '@lrs/core-engine';
-import type { Action, GameEvent, Logger } from '@lrs/shared';
+import type { Action, GameEvent, Logger, SeatId } from '@lrs/shared';
 import type { GameStore } from '../store/gameStore.ts';
 import { defaultActionFor, randomActionFor } from './defaultAction.ts';
 import { projectState, type ClientMessage, type ClientState, type ServerMessage } from './protocol.ts';
@@ -22,7 +22,12 @@ export interface Subscriber {
 }
 
 /** 每开一局都要重建 AI（记忆不能跨局残留） */
-export type AgentHostFactory = (input: { seatCount: number; names: string[] }) => AgentHost;
+export type AgentHostFactory = (input: {
+  seatCount: number;
+  names: string[];
+  /** AI 发言的增量片段，房间负责转发给前端 */
+  onSpeechDelta: (seat: SeatId, delta: string) => void;
+}) => AgentHost;
 
 export interface GameRoomOptions {
   logger: Logger;
@@ -204,6 +209,7 @@ export class GameRoom {
       ? this.hostFactory({
           seatCount: result.state.board.seatCount,
           names: result.state.players.map((player) => player.name),
+          onSpeechDelta: (seat, delta) => this.broadcastStream(seat, delta),
         })
       : null;
     this.host?.observe(result.events);
@@ -335,6 +341,9 @@ export class GameRoom {
     try {
       const action = await host.act(this.state, pending);
 
+      // 不管这次行动最终会不会被采纳，都要告诉前端「这段打字机结束」，避免光标一直闪
+      if (action.kind === 'speak') this.broadcastStreamDone(pending.seat);
+
       // 模型思考期间局面可能已经变了（比如人工代打或超时兜底先提交了），先确认再提交
       const current = pendingRequest(this.state);
       if (!current || current.seat !== pending.seat) {
@@ -355,6 +364,7 @@ export class GameRoom {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error('AI 行动失败，改用兜底动作', { seat: pending.seat, error: message });
+      this.broadcastStreamDone(pending.seat);
 
       const current = pendingRequest(this.state);
       if (current && current.seat === pending.seat) {
@@ -413,6 +423,25 @@ export class GameRoom {
         state: this.project(subscriber.viewer),
         events: eventsFor(delta, subscriber.viewer),
       });
+    }
+  }
+
+  /**
+   * 转发 AI 发言的增量片段。
+   *
+   * 发言内容本身是公开信息（大家都会听到），所以不做视角过滤；
+   * 真正的「说了什么」仍以随后的 spoke 事件为准，这里只负责打字机效果。
+   */
+  private broadcastStream(seat: SeatId, delta: string): void {
+    if (delta.length === 0) return;
+    for (const subscriber of this.subscribers.values()) {
+      subscriber.send({ type: 'stream', seat, delta });
+    }
+  }
+
+  private broadcastStreamDone(seat: SeatId): void {
+    for (const subscriber of this.subscribers.values()) {
+      subscriber.send({ type: 'stream-done', seat });
     }
   }
 }

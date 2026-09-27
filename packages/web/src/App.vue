@@ -8,7 +8,7 @@ import { formatEvent, type EventLine } from './format';
 import { PHASE_LABELS } from './labels';
 import { useGameSocket } from './ws';
 
-const { state, events, connected, lastError, connect, send } = useGameSocket();
+const { state, events, streaming, connected, lastError, connect, send } = useGameSocket();
 
 onMounted(connect);
 
@@ -63,8 +63,8 @@ function newGame(): void {
     </header>
 
     <main class="main">
-      <RoundTable :state="state" :latest="latestSpeech" />
-      <EventLog :lines="lines" />
+      <RoundTable :state="state" :latest="latestSpeech" :streaming="streaming" />
+      <EventLog :lines="lines" :streaming="streaming" />
     </main>
 
     <ActionPanel :state="state" :connected="connected" :error="lastError" @send="submit" @auto="autoPlay" @new-game="newGame" />

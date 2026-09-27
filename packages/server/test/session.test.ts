@@ -8,34 +8,53 @@ import { GameStore } from '../src/store/gameStore.ts';
 
 const logger = createLogger('test', nullSink, 'error');
 
-type Snapshot = Extract<ServerMessage, { type: 'snapshot' }>;
-type Update = Extract<ServerMessage, { type: 'update' }>;
+/** 带状态的两种消息（流式片段不带状态） */
+type StateMessage = Extract<ServerMessage, { type: 'snapshot' | 'update' }>;
+
+const isStateMessage = (message: ServerMessage): message is StateMessage =>
+  message.type === 'snapshot' || message.type === 'update';
 
 interface Collector {
   messages: ServerMessage[];
+  streams: string[];
   subscribe: (room: GameRoom, id: string, viewer: Viewer) => void;
-  last: () => ServerMessage;
+  last: () => StateMessage;
   state: () => ClientState;
 }
 
 function collector(): Collector {
   const messages: ServerMessage[] = [];
+  const streams: string[] = [];
   return {
     messages,
+    streams,
     subscribe: (room, id, viewer) => {
-      room.subscribe({ id, viewer, send: (message) => messages.push(message) });
+      room.subscribe({
+        id,
+        viewer,
+        send: (message) => {
+          messages.push(message);
+          if (message.type === 'stream') streams.push(message.delta);
+        },
+      });
     },
     last: () => {
-      const message = messages[messages.length - 1];
-      if (!message) throw new Error('还没有收到任何消息');
-      return message;
+      for (let index = messages.length - 1; index >= 0; index -= 1) {
+        const message = messages[index]!;
+        if (isStateMessage(message)) return message;
+      }
+      throw new Error('还没有收到状态');
     },
-    state: () => {
-      const message = messages[messages.length - 1];
-      if (!message || message.type === 'error') throw new Error('还没有收到状态');
-      return message.state;
-    },
+    state: () => collectorState(messages),
   };
+}
+
+function collectorState(messages: ServerMessage[]): ClientState {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]!;
+    if (isStateMessage(message)) return message.state;
+  }
+  throw new Error('还没有收到状态');
 }
 
 const rooms: GameRoom[] = [];
@@ -130,7 +149,7 @@ describe('信息裁剪', () => {
     const player = collector();
     player.subscribe(room, 'player', me);
 
-    const snapshot = player.last() as Snapshot;
+    const snapshot = player.last() as Extract<StateMessage, { type: 'snapshot' }>;
     const roleEvents = snapshot.events.filter((event) => event.payload.t === 'role_assigned');
     expect(roleEvents).toHaveLength(1);
     expect(roleEvents[0]?.payload).toMatchObject({ seat: me });
@@ -166,7 +185,7 @@ describe('行动提交', () => {
     expect(after.pending?.seat).toBe(actor);
     expect(after.phase).toBe(before.phase);
 
-    const update = god.last() as Update;
+    const update = god.last() as Extract<StateMessage, { type: 'update' }>;
     expect(update.events.some((event) => event.payload.t === 'action_rejected')).toBe(true);
   });
 

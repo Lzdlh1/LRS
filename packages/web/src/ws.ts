@@ -4,6 +4,14 @@ import { onBeforeUnmount, ref } from 'vue';
 
 const MAX_KEPT_EVENTS = 600;
 
+/** 正在生成中的发言（打字机） */
+export interface LiveSpeech {
+  seat: number;
+  text: string;
+  /** 生成已结束，等 spoke 事件落地后就清掉 */
+  done: boolean;
+}
+
 /**
  * 与 session-service 的唯一连接。
  *
@@ -13,6 +21,7 @@ const MAX_KEPT_EVENTS = 600;
 export function useGameSocket() {
   const state = ref<ClientState | null>(null);
   const events = ref<GameEvent[]>([]);
+  const streaming = ref<LiveSpeech | null>(null);
   const connected = ref(false);
   const lastError = ref<string | null>(null);
 
@@ -24,6 +33,23 @@ export function useGameSocket() {
     if (disposed) return;
     if (retryTimer !== null) window.clearTimeout(retryTimer);
     retryTimer = window.setTimeout(connect, 1200);
+  }
+
+  function appendStream(seat: number, delta: string): void {
+    const current = streaming.value;
+    if (!current || current.seat !== seat || current.done) {
+      streaming.value = { seat, text: delta, done: false };
+      return;
+    }
+    current.text += delta;
+  }
+
+  function markStreamDone(seat: number): void {
+    if (streaming.value?.seat === seat) streaming.value = { ...streaming.value, done: true };
+  }
+
+  function clearStream(seat: number): void {
+    if (streaming.value?.seat === seat) streaming.value = null;
   }
 
   function connect(): void {
@@ -58,12 +84,27 @@ export function useGameSocket() {
         lastError.value = message.message;
         return;
       }
+      if (message.type === 'stream') {
+        appendStream(message.seat, message.delta);
+        return;
+      }
+      if (message.type === 'stream-done') {
+        markStreamDone(message.seat);
+        return;
+      }
 
       state.value = message.state;
       if (message.type === 'snapshot') {
         events.value = message.events;
+        // 整份快照意味着换了局或刚连上，打字机内容一律作废
+        streaming.value = null;
       } else {
         events.value = [...events.value, ...message.events].slice(-MAX_KEPT_EVENTS);
+      }
+
+      // 正式发言落地后，用事件里的干净文本取代打字机内容
+      for (const event of message.events) {
+        if (event.payload.t === 'spoke') clearStream(event.payload.seat);
       }
     };
   }
@@ -72,15 +113,11 @@ export function useGameSocket() {
     if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
   }
 
-  function lookupSeatRole(seat: number): string | null {
-    return state.value?.seats.find((s) => s.seat === seat)?.role ?? null;
-  }
-
   onBeforeUnmount(() => {
     disposed = true;
     if (retryTimer !== null) window.clearTimeout(retryTimer);
     socket?.close();
   });
 
-  return { state, events, connected, lastError, connect, send, lookupSeatRole };
+  return { state, events, streaming, connected, lastError, connect, send };
 }

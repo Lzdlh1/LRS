@@ -61,6 +61,9 @@ export type ClientMessage =
 export type ServerMessage =
   | { type: 'snapshot'; state: ClientState; events: GameEvent[] }
   | { type: 'update'; state: ClientState; events: GameEvent[] }
+  /** AI 发言的增量片段，用于打字机效果；不含事件，落地仍以 spoke 事件为准 */
+  | { type: 'stream'; seat: SeatId; delta: string }
+  | { type: 'stream-done'; seat: SeatId }
   | { type: 'error'; message: string };
 
 export interface ProjectArgs {

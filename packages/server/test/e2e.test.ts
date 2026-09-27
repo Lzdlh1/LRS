@@ -41,14 +41,24 @@ interface WebSocketLike {
 const NodeWebSocket = (globalThis as unknown as { WebSocket: new (url: string) => WebSocketLike }).WebSocket;
 
 interface Waiter {
-  predicate: (message: ServerMessage) => boolean;
-  run: (message: ServerMessage) => void;
+  predicate: (message: StateMessage) => boolean;
+  run: (message: StateMessage) => void;
 }
+
+/** 流式片段不带状态，测试里只关心带状态的消息 */
+type StateMessage = Extract<ServerMessage, { type: 'snapshot' | 'update' }>;
+
+const isStateMessage = (message: ServerMessage): message is StateMessage =>
+  message.type === 'snapshot' || message.type === 'update';
 
 const waiters = new WeakMap<WebSocketLike, Set<Waiter>>();
 
-function waitFor(socket: WebSocketLike, predicate: (m: ServerMessage) => boolean, label: string): Promise<ServerMessage> {
-  return new Promise<ServerMessage>((resolve, reject) => {
+function waitFor(
+  socket: WebSocketLike,
+  predicate: (m: StateMessage) => boolean,
+  label: string,
+): Promise<StateMessage> {
+  return new Promise<StateMessage>((resolve, reject) => {
     const bucket = waiters.get(socket) ?? new Set<Waiter>();
     waiters.set(socket, bucket);
 
@@ -96,9 +106,9 @@ async function start(): Promise<Harness> {
 
 interface Client {
   events: GameEvent[];
-  latest: ServerMessage | null;
+  latest: StateMessage | null;
   send: (message: unknown) => void;
-  waitFor: (predicate: (message: ServerMessage) => boolean, label: string) => Promise<ServerMessage>;
+  waitFor: (predicate: (message: StateMessage) => boolean, label: string) => Promise<StateMessage>;
 }
 
 async function connect(port: number): Promise<Client> {
@@ -117,8 +127,9 @@ async function connect(port: number): Promise<Client> {
 
   socket.addEventListener('message', (event: { data: unknown }) => {
     const message = JSON.parse(String(event.data)) as ServerMessage;
+    if (!isStateMessage(message)) return;
     client.latest = message;
-    if (message.type !== 'error') client.events.push(...message.events);
+    client.events.push(...message.events);
     for (const waiter of [...(waiters.get(socket) ?? [])]) waiter.run(message);
   });
 
@@ -169,12 +180,8 @@ describe('WebSocket 端到端', () => {
     await firstSnapshot(client);
 
     client.send({ type: 'autoPlay', count: 600 });
-    const finished = await client.waitFor(
-      (m) => m.type !== 'error' && m.state.winner !== null,
-      '对局结束',
-    );
+    const finished = await client.waitFor((m) => m.state.winner !== null, '对局结束');
 
-    if (finished.type === 'error') throw new Error(finished.message);
     expect(['wolf', 'good']).toContain(finished.state.winner);
     expect(finished.state.pending).toBeNull();
 
@@ -215,7 +222,7 @@ describe('WebSocket 端到端', () => {
 
     client.send({ type: 'action', action: { kind: 'vote', actor: 99, target: 1 } });
     await client.waitFor(
-      (m) => m.type !== 'error' && m.events.some((event) => event.payload.t === 'action_rejected'),
+      (m) => m.events.some((event) => event.payload.t === 'action_rejected'),
       '拒绝事件',
     );
 

@@ -67,7 +67,7 @@ function main(): void {
     wsLogger: logging.ws,
     store,
     aiLive: llm.live,
-    hostFactory: ({ seatCount, names }) =>
+    hostFactory: ({ seatCount, names, onSpeechDelta }) =>
       createAgentHost({
         router: llm.router,
         logger: logging.agent,
@@ -75,6 +75,7 @@ function main(): void {
         seatCount,
         names,
         enableReflection: config.llm.reflection,
+        onSpeechDelta,
       }),
   });
 

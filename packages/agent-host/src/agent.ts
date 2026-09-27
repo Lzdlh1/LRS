@@ -171,7 +171,7 @@ export class Agent {
   }
 
   /** 「想」：产出一个结构化决策；发言阶段会紧接着调用 speak 把它说出来 */
-  async decide(context: ActContext): Promise<DecideOutput> {
+  async decide(context: ActContext, onSpeechDelta?: (delta: string) => void): Promise<DecideOutput> {
     if (this.role === null) throw new Error(`${this.seat} 号还没有拿到自己的身份`);
 
     const isSpeech = needsSpeech(context.pending);
@@ -211,7 +211,12 @@ export class Agent {
     });
 
     if (isSpeech) {
-      const speech = await this.composeSpeech(promptInput, decision, context.speechContext ?? 'day');
+      const speech = await this.composeSpeech(
+        promptInput,
+        decision,
+        context.speechContext ?? 'day',
+        onSpeechDelta,
+      );
       return {
         action: { kind: 'speak', actor: this.seat, text: speech },
         decision,
@@ -224,11 +229,17 @@ export class Agent {
     return { action: picked.action, decision, claim: decision.claim };
   }
 
-  /** 「说」：把已经定好的结论演绎成人话，用便宜模型流式产出 */
+  /**
+   * 「说」：把已经定好的结论演绎成人话，用便宜模型流式产出。
+   *
+   * 每个增量都会通过 onSpeechDelta 推给前端做打字机效果；
+   * 最终落地到引擎的仍然是 sanitize 之后的干净文本。
+   */
   private async composeSpeech(
     promptInput: PromptInput,
     decision: Decision,
     context: SpeechContext,
+    onSpeechDelta?: (delta: string) => void,
   ): Promise<string> {
     const chunks: string[] = [];
     for await (const chunk of this.router.stream({
@@ -242,6 +253,7 @@ export class Agent {
       temperature: 1.1,
     })) {
       chunks.push(chunk);
+      onSpeechDelta?.(chunk);
     }
 
     const text = sanitizeSpeech(chunks.join(''));

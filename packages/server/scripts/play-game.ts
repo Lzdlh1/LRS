@@ -63,12 +63,18 @@ async function playGame(): Promise<void> {
   const deaths: string[] = [];
   let lastState: ClientState | null = null;
   let eventCount = 0;
+  let streamEvents = 0;
 
   const socket = new WebSocket(WS_URL);
   const reader = (): ClientState | null => lastState;
 
   socket.addEventListener('message', (event: { data: unknown }) => {
     const message = JSON.parse(String(event.data)) as ServerMessage;
+    // 流式片段与「结束」信号都不带状态，演示脚本只统计，不额外处理
+    if (message.type === 'stream' || message.type === 'stream-done') {
+      streamEvents += 1;
+      return;
+    }
     if (message.type === 'error') {
       console.log('[服务端错误]', message.message);
       return;
@@ -111,7 +117,9 @@ async function playGame(): Promise<void> {
 
   const state = reader();
   const winner = state?.winner ?? null;
-  console.log(`\n[结果] 胜方 = ${winner ?? '未结束（超时）'}；事件数 = ${eventCount}；发言 ${speeches.length} 条`);
+  console.log(
+    `\n[结果] 胜方 = ${winner ?? '未结束（超时）'}；事件数 = ${eventCount}；发言 ${speeches.length} 条；流式片段 ${streamEvents} 个`,
+  );
   console.log(`[出局] ${deaths.join('、') || '无'}`);
 
   console.log('\n[发言全文]');

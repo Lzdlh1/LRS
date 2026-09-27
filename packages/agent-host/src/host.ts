@@ -19,7 +19,9 @@ export interface AgentHostOptions {
   seatCount: number;
   /** 投票结算后是否触发反思（每个 AI 一次便宜调用） */
   enableReflection?: boolean;
-  /** 发言生成完毕的回调，方便实时推给前端 */
+  /** 发言增量回调：边生成边推给前端做打字机效果 */
+  onSpeechDelta?: (seat: SeatId, delta: string) => void;
+  /** 发言生成完毕的回调 */
   onSpeech?: (seat: SeatId, text: string) => void;
 }
 
@@ -33,6 +35,7 @@ export interface CreateHostOptions {
   names: readonly string[];
   rng?: () => number;
   enableReflection?: boolean;
+  onSpeechDelta?: (seat: SeatId, delta: string) => void;
   onSpeech?: (seat: SeatId, text: string) => void;
 }
 
@@ -65,12 +68,14 @@ export class AgentHost {
   private readonly logger: Logger;
   private readonly reflection: boolean;
   private readonly onSpeech: ((seat: SeatId, text: string) => void) | null;
+  private readonly onSpeechDelta: ((seat: SeatId, delta: string) => void) | null;
   private reflecting = false;
 
   constructor(options: AgentHostOptions) {
     this.logger = options.logger;
     this.reflection = options.enableReflection ?? true;
     this.onSpeech = options.onSpeech ?? null;
+    this.onSpeechDelta = options.onSpeechDelta ?? null;
     this.facts = createFacts(options.seatCount);
     this.agents = new Map(
       options.seats.map((seat) => [
@@ -124,13 +129,17 @@ export class AgentHost {
     if (!agent) throw new Error(`${pending.seat} 号不归 AI 管`);
 
     const kind = pending.options[0]?.kind ?? 'speak';
-    const result = await agent.decide({
-      facts: this.facts,
-      phaseLabel: PHASE_LABELS[state.phase],
-      speechContext: speechContextFor(state.phase),
-      pending,
-      packNotes: this.packNotesFor(pending.seat),
-    });
+    const delta = this.onSpeechDelta;
+    const result = await agent.decide(
+      {
+        facts: this.facts,
+        phaseLabel: PHASE_LABELS[state.phase],
+        speechContext: speechContextFor(state.phase),
+        pending,
+        packNotes: this.packNotesFor(pending.seat),
+      },
+      delta ? (chunk: string) => delta(pending.seat, chunk) : undefined,
+    );
 
     if (result.claim) {
       recordClaim(this.facts, {
@@ -210,5 +219,6 @@ export function createAgentHost(options: CreateHostOptions): AgentHost {
     seatCount: options.seatCount,
     enableReflection: options.enableReflection,
     onSpeech: options.onSpeech,
+    onSpeechDelta: options.onSpeechDelta,
   });
 }

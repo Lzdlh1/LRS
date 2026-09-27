@@ -81,7 +81,7 @@ async function startWithAi(): Promise<number> {
     logger,
     wsLogger: logger,
     store: null,
-    hostFactory: ({ seatCount, names }) =>
+    hostFactory: ({ seatCount, names, onSpeechDelta }) =>
       createAgentHost({
         router,
         logger,
@@ -90,6 +90,7 @@ async function startWithAi(): Promise<number> {
         names,
         rng: () => 0.42,
         enableReflection: false,
+        onSpeechDelta,
       }),
   });
 
@@ -101,9 +102,21 @@ async function startWithAi(): Promise<number> {
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** 真人只负责「轮到 1 号时点一下第一个按钮」，其余全交给 AI */
-async function playWithAi(port: number, humanSeat: number, timeoutMs = 60_000): Promise<{ state: ClientState | null; events: GameEvent[] }> {
+async function playWithAi(
+  port: number,
+  humanSeat: number,
+  timeoutMs = 60_000,
+): Promise<{
+  state: ClientState | null;
+  events: GameEvent[];
+  streams: { seat: number; text: string }[];
+  streamDone: number[];
+}> {
   const socket = new NodeWebSocket(`ws://127.0.0.1:${port}/ws`);
   const events: GameEvent[] = [];
+  const streams: { seat: number; text: string }[] = [];
+  const streamDone: number[] = [];
+  let lastStream: { seat: number; text: string } | null = null;
   let latest: ClientState | null = null;
 
   await new Promise<void>((resolve, reject) => {
@@ -113,7 +126,21 @@ async function playWithAi(port: number, humanSeat: number, timeoutMs = 60_000): 
 
   socket.addEventListener('message', (event: { data: unknown }) => {
     const message = JSON.parse(String(event.data)) as ServerMessage;
-    if (message.type === 'error') return;
+
+    // 流式片段与「结束」信号都不带状态，单独收集
+    if (message.type === 'stream') {
+      if (!lastStream || lastStream.seat !== message.seat) {
+        lastStream = { seat: message.seat, text: '' };
+        streams.push(lastStream);
+      }
+      lastStream.text += message.delta;
+      return;
+    }
+    if (message.type === 'stream-done') {
+      streamDone.push(message.seat);
+      return;
+    }
+    if (message.type !== 'snapshot' && message.type !== 'update') return;
 
     latest = message.state;
     events.push(...message.events);
@@ -134,7 +161,7 @@ async function playWithAi(port: number, humanSeat: number, timeoutMs = 60_000): 
   while (Date.now() < deadline && readLatest()?.winner == null) await sleep(50);
 
   socket.close();
-  return { state: readLatest(), events };
+  return { state: readLatest(), events, streams, streamDone };
 }
 
 describe('AI 接管对局', () => {
@@ -172,4 +199,20 @@ describe('AI 接管对局', () => {
       `收到 ${events.length} 个事件；胜方=${state?.winner ?? '未结束'}；阶段=${state?.phase ?? '未知'}`,
     ).toBeGreaterThanOrEqual(6);
   }, 60_000);
+
+  it('AI 发言以增量片段流式推给前端，且与最终落地文本一致', async () => {
+    const port = await startWithAi();
+    const { events, streams, streamDone } = await playWithAi(port, 1, 60_000);
+
+    expect(streams.length).toBeGreaterThan(0);
+    expect(streamDone.length).toBeGreaterThan(0);
+
+    const spoken = events.filter((event) => event.payload.t === 'spoke');
+    for (const stream of streams) {
+      const matched = spoken.some(
+        (event) => event.payload.t === 'spoke' && event.payload.seat === stream.seat && event.payload.text === stream.text,
+      );
+      expect(matched, `${stream.seat} 号的流式文本应该能对上一条正式发言：${stream.text}`).toBe(true);
+    }
+  }, 90_000);
 });

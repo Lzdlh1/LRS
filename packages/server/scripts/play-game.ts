@@ -79,6 +79,7 @@ async function playGame(): Promise<void> {
       console.log('[服务端错误]', message.message);
       return;
     }
+    if (message.type === 'replay') return; // 演示脚本不请求复盘
 
     lastState = message.state;
     for (const raw of message.events as GameEvent[]) {

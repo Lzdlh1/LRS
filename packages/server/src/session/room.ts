@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { AgentHost } from '@lrs/agent-host';
+import type { AgentHost, DecisionLogEntry } from '@lrs/agent-host';
 import {
   choicesFor,
   concurrentBatch,
@@ -16,7 +16,14 @@ import {
 import type { Action, GameEvent, Logger, SeatId } from '@lrs/shared';
 import type { GameStore } from '../store/gameStore.ts';
 import { defaultActionFor, randomActionFor } from './defaultAction.ts';
-import { projectState, type ClientMessage, type ClientState, type ServerMessage } from './protocol.ts';
+import {
+  projectState,
+  type ClientMessage,
+  type ClientState,
+  type ReplayDecision,
+  type ReplayPayload,
+  type ServerMessage,
+} from './protocol.ts';
 
 export interface Subscriber {
   id: string;
@@ -30,6 +37,8 @@ export type AgentHostFactory = (input: {
   names: string[];
   /** AI 发言的增量片段，房间负责转发给前端 */
   onSpeechDelta: (seat: SeatId, delta: string) => void;
+  /** 每次决策完成，房间负责记下来供复盘 */
+  onDecision: (entry: DecisionLogEntry) => void;
 }) => AgentHost;
 
 export interface GameRoomOptions {
@@ -72,6 +81,8 @@ export class GameRoom {
   private readonly prefetch = new Map<string, Promise<Action | null>>();
   /** 已经批量发起过的「天:阶段」，避免同一阶段重复补发 */
   private prefetchBatch = '';
+  /** 本局的 AI 决策记录，供复盘查看「它当时在想什么」 */
+  private decisions: ReplayDecision[] = [];
   private currentGameId: string;
   private state: GameState;
   private history: GameEvent[] = [];
@@ -139,6 +150,9 @@ export class GameRoom {
       case 'autoPlay':
         this.autoPlay(message.count ?? 1);
         return;
+      case 'replay':
+        this.sendReplay(id, message.day);
+        return;
       default: {
         const unknown = message as { type?: string };
         this.logger.warn('收到未知消息', { channel: id, type: unknown.type });
@@ -198,6 +212,7 @@ export class GameRoom {
     this.aiToken = '';
     this.prefetch.clear();
     this.prefetchBatch = '';
+    this.decisions = [];
 
     const rng = seed === undefined ? Math.random : mulberry32(seed);
     const result = createGame({ humanSeats: [1], rules: this.rules, rng });
@@ -219,6 +234,7 @@ export class GameRoom {
           seatCount: result.state.board.seatCount,
           names: result.state.players.map((player) => player.name),
           onSpeechDelta: (seat, delta) => this.broadcastStream(seat, delta),
+          onDecision: (entry) => this.recordDecision(entry),
         })
       : null;
     this.host?.observe(result.events);
@@ -546,5 +562,61 @@ export class GameRoom {
     for (const subscriber of this.subscribers.values()) {
       subscriber.send({ type: 'stream-done', seat });
     }
+  }
+
+  // ── 复盘 ──
+
+  private recordDecision(entry: DecisionLogEntry): void {
+    this.decisions.push({
+      // 此刻 state.seq 正好落在本次 action_requested 之后，用它把决策插回时间线
+      seq: this.state.seq,
+      day: this.state.day,
+      phase: this.state.phase,
+      seat: entry.seat,
+      kind: entry.kind,
+      reasoning: entry.reasoning,
+      stance: entry.stance,
+      push: entry.push,
+      mood: entry.mood,
+      claim: entry.claim,
+    });
+  }
+
+  private sendReplay(id: string, day?: number): void {
+    const subscriber = this.subscribers.get(id);
+    if (!subscriber) return;
+    subscriber.send({ type: 'replay', payload: this.buildReplay(subscriber.viewer, day) });
+  }
+
+  /**
+   * 组装复盘数据。
+   *
+   * 事件照旧走视角裁剪，所以玩家视角回看时也不会多看到别人的私密事件；
+   * 而「AI 的推理依据」和「底牌」在局中一律封存 —— 推理里带着身份信息，
+   * 局中看到等于直接作弊。本局结束（或本身是上帝视角）才解封。
+   */
+  private buildReplay(viewer: Viewer, requestedDay?: number): ReplayPayload {
+    const days = [...new Set(this.history.map((event) => event.day))].sort((a, b) => a - b);
+    const day =
+      requestedDay !== undefined && days.includes(requestedDay)
+        ? requestedDay
+        : (days[days.length - 1] ?? 0);
+
+    const sealed = viewer !== 'god' && this.state.winner === null;
+
+    return {
+      gameId: this.currentGameId,
+      days,
+      day,
+      events: eventsFor(
+        this.history.filter((event) => event.day === day),
+        viewer,
+      ),
+      sealed,
+      decisions: sealed ? [] : this.decisions.filter((item) => item.day === day),
+      roles: sealed
+        ? null
+        : this.state.players.map((player) => ({ seat: player.seat, role: player.role })),
+    };
   }
 }

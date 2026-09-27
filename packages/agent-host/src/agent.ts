@@ -202,11 +202,14 @@ export class Agent {
     });
 
     this.applyDecision(decision);
-    this.logger.debug('决策完成', {
+    // 推理依据是调 AI 质量时最要紧的线索，用 info 级别记下来（否则默认级别会丢掉）
+    this.logger.info('决策完成', {
+      seat: this.seat,
       kind,
       choice: decision.choiceIndex,
       push: decision.push,
       mood: decision.mood,
+      stance: decision.stance,
       reasoning: decision.reasoning,
     });
 

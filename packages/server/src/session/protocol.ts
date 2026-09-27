@@ -59,12 +59,48 @@ export interface ClientState {
   lastSeq: number;
 }
 
+/** 一次 AI 决策，复盘里用来展示「它当时在想什么」 */
+export interface ReplayDecision {
+  /** 与事件流同一套序号，用于把决策插回时间线 */
+  seq: number;
+  day: number;
+  phase: Phase;
+  seat: SeatId;
+  kind: string;
+  reasoning: string;
+  stance: string;
+  push: SeatId | null;
+  mood: string;
+  claim: { role: Role; note: string } | null;
+}
+
+export interface ReplayPayload {
+  gameId: string;
+  /** 这一局出现过哪些天 */
+  days: number[];
+  /** 当前回放的是哪一天 */
+  day: number;
+  /** 已按视角裁剪过的事件 */
+  events: GameEvent[];
+  /**
+   * AI 的推理依据**默认封存**。
+   *
+   * 推理里带着身份信息（「我是狼，队友是 2、5」），局中看到等于作弊；
+   * 只有本局结束（或上帝视角）才解封。
+   */
+  sealed: boolean;
+  decisions: ReplayDecision[];
+  /** 亮底牌；同样受 sealed 限制 */
+  roles: { seat: SeatId; role: Role }[] | null;
+}
+
 export type ClientMessage =
   | { type: 'action'; action: Action }
   | { type: 'setViewer'; viewer: Viewer }
   | { type: 'resync'; sinceSeq: number }
   | { type: 'newGame'; seed?: number }
-  | { type: 'autoPlay'; count?: number };
+  | { type: 'autoPlay'; count?: number }
+  | { type: 'replay'; day?: number };
 
 export type ServerMessage =
   | { type: 'snapshot'; state: ClientState; events: GameEvent[] }
@@ -72,6 +108,7 @@ export type ServerMessage =
   /** AI 发言的增量片段，用于打字机效果；不含事件，落地仍以 spoke 事件为准 */
   | { type: 'stream'; seat: SeatId; delta: string }
   | { type: 'stream-done'; seat: SeatId }
+  | { type: 'replay'; payload: ReplayPayload }
   | { type: 'error'; message: string };
 
 export interface ProjectArgs {

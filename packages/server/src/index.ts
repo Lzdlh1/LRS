@@ -69,7 +69,7 @@ function main(): void {
     aiLive: llm.live,
     // 正式玩法默认就是玩家视角；想看全场底牌用界面右上角的开关切到上帝视角
     defaultViewer: 1,
-    hostFactory: ({ seatCount, names, onSpeechDelta }) =>
+    hostFactory: ({ seatCount, names, onSpeechDelta, onDecision }) =>
       createAgentHost({
         router: llm.router,
         logger: logging.agent,
@@ -78,6 +78,7 @@ function main(): void {
         names,
         enableReflection: config.llm.reflection,
         onSpeechDelta,
+        onDecision,
       }),
   });
 

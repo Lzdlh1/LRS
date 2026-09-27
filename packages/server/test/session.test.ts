@@ -2,8 +2,8 @@ import type { AgentHost } from '@lrs/agent-host';
 import { choicesFor, type PendingRequest, type Viewer } from '@lrs/core-engine';
 import { createLogger, nullSink, type Action, type SeatId } from '@lrs/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ClientState, ServerMessage } from '../src/session/protocol.ts';
-import { GameRoom } from '../src/session/room.ts';
+import type { ClientState, ReplayPayload, ServerMessage } from '../src/session/protocol.ts';
+import { GameRoom, type AgentHostFactory } from '../src/session/room.ts';
 import { openDatabase } from '../src/store/db.ts';
 import { GameStore } from '../src/store/gameStore.ts';
 
@@ -344,6 +344,100 @@ describe('玩家视角的信息边界', () => {
     const seen = player.state().seats.find((seat) => seat.seat === deadSeats[0]!);
     expect(seen?.alive, '死讯未公布前，别人看到的他应该是活着的').toBe(true);
     expect(seen?.deathCause).toBeNull();
+  });
+});
+
+describe('复盘', () => {
+  /** 假 AI：只负责产出动作并回报一条决策，用来验证复盘链路 */
+  function replayFactory(humanSeat: SeatId): AgentHostFactory {
+    return ({ onDecision }) =>
+      ({
+        observe: (): void => {},
+        handles: (seat: SeatId): boolean => seat !== humanSeat,
+        act: async (_state: unknown, pending: PendingRequest): Promise<Action> => {
+          onDecision({
+            seat: pending.seat,
+            kind: pending.options[0]?.kind ?? '?',
+            reasoning: `${pending.seat} 号的假推理`,
+            stance: '假立场',
+            push: null,
+            mood: 'calm',
+            claim: null,
+          });
+          const choice = choicesFor(pending)[0];
+          return choice?.action ?? { kind: 'speak', actor: pending.seat, text: '（假 AI）发言' };
+        },
+      }) as unknown as AgentHost;
+  }
+
+  function lastReplay(target: Collector): ReplayPayload {
+    for (let i = target.messages.length - 1; i >= 0; i -= 1) {
+      const message = target.messages[i]!;
+      if (message.type === 'replay') return message.payload;
+    }
+    throw new Error('没有收到复盘数据');
+  }
+
+  it('局中封存推理依据与底牌，事件仍按视角裁剪', async () => {
+    const room = new GameRoom({ logger, store: null, hostFactory: replayFactory(1) });
+    rooms.push(room);
+
+    const god = collector();
+    god.subscribe(room, 'god', 'god');
+
+    // 只走两步：让 AI 真的产生决策，同时保证这局还没打完 —— 局中才谈得上「封存」
+    let humanTurns = 0;
+    for (let i = 0; i < 60 && humanTurns < 2; i += 1) {
+      const pending = god.state().pending;
+      if (!pending) break;
+      if (pending.seat === 1) {
+        const action = driveAction(pending);
+        if (!action) break;
+        room.submit(action, 'client');
+        humanTurns += 1;
+      }
+      await sleep(15);
+    }
+    expect(god.state().winner, '这一步之后对局应该还在进行中').toBeNull();
+
+    // 上帝视角：解封，且能拿到 9 张底牌
+    room.handleMessage('god', { type: 'replay', day: 1 });
+    const godPayload = lastReplay(god);
+    expect(godPayload.sealed).toBe(false);
+    expect(godPayload.roles).toHaveLength(9);
+    expect(godPayload.decisions.length).toBeGreaterThan(0);
+
+    // 玩家视角：事件只剩自己该看的，推理与底牌一律封存
+    const player = collector();
+    player.subscribe(room, 'player', 1);
+    room.handleMessage('player', { type: 'replay', day: 1 });
+
+    const payload = lastReplay(player);
+    expect(payload.sealed).toBe(true);
+    expect(payload.roles).toBeNull();
+    expect(payload.decisions).toEqual([]);
+    expect(payload.days).toContain(1);
+
+    const roleEvents = payload.events.filter((event) => event.payload.t === 'role_assigned');
+    expect(roleEvents, '玩家视角只该看到自己的身份事件').toHaveLength(1);
+  });
+
+  it('本局结束后解封，但玩家视角依旧只看得到自己的私密事件', () => {
+    const { room } = makeRoom(31337);
+    const god = collector();
+    god.subscribe(room, 'god', 'god');
+
+    for (let i = 0; i < 400 && god.state().winner === null; i += 1) room.autoPlay(1);
+    expect(god.state().winner).not.toBeNull();
+
+    const player = collector();
+    player.subscribe(room, 'player', 1);
+    room.handleMessage('player', { type: 'replay', day: 1 });
+
+    const payload = lastReplay(player);
+    expect(payload.sealed).toBe(false);
+    expect(payload.roles).toHaveLength(9);
+    expect(payload.events.filter((event) => event.payload.t === 'role_assigned')).toHaveLength(1);
   });
 });
 

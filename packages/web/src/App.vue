@@ -3,12 +3,14 @@ import type { Action } from '@lrs/shared';
 import { computed, onMounted } from 'vue';
 import ActionPanel from './components/ActionPanel.vue';
 import EventLog from './components/EventLog.vue';
+import ReplayPanel from './components/ReplayPanel.vue';
 import RoundTable from './components/RoundTable.vue';
 import { formatEvent, type EventLine } from './format';
 import { PHASE_LABELS } from './labels';
 import { useGameSocket } from './ws';
 
-const { state, events, streaming, connected, lastError, connect, send } = useGameSocket();
+const { state, events, streaming, replay, connected, lastError, connect, send, openReplay, closeReplay } =
+  useGameSocket();
 
 onMounted(connect);
 
@@ -76,6 +78,7 @@ function newGame(): void {
       >
         {{ viewerLabel }}
       </button>
+      <button class="ghost" :disabled="!connected" @click="openReplay()">复盘</button>
       <button class="ghost" @click="newGame">新开一局</button>
     </header>
 
@@ -85,6 +88,8 @@ function newGame(): void {
     </main>
 
     <ActionPanel :state="state" :connected="connected" :error="lastError" @send="submit" @auto="autoPlay" @new-game="newGame" />
+
+    <ReplayPanel v-if="replay" :payload="replay" @day="openReplay" @close="closeReplay" />
   </div>
 </template>
 

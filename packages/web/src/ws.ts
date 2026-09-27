@@ -1,5 +1,5 @@
 import type { GameEvent } from '@lrs/shared';
-import type { ClientMessage, ClientState, ServerMessage } from '@lrs/server/protocol';
+import type { ClientMessage, ClientState, ReplayPayload, ServerMessage } from '@lrs/server/protocol';
 import { onBeforeUnmount, ref } from 'vue';
 
 const MAX_KEPT_EVENTS = 600;
@@ -22,6 +22,8 @@ export function useGameSocket() {
   const state = ref<ClientState | null>(null);
   const events = ref<GameEvent[]>([]);
   const streaming = ref<LiveSpeech | null>(null);
+  /** 复盘面板的数据；null 表示面板没打开 */
+  const replay = ref<ReplayPayload | null>(null);
   const connected = ref(false);
   const lastError = ref<string | null>(null);
 
@@ -92,12 +94,18 @@ export function useGameSocket() {
         markStreamDone(message.seat);
         return;
       }
+      if (message.type === 'replay') {
+        replay.value = message.payload;
+        return;
+      }
 
       state.value = message.state;
       if (message.type === 'snapshot') {
         events.value = message.events;
         // 整份快照意味着换了局或刚连上，打字机内容一律作废
         streaming.value = null;
+        // 换了局的话，复盘面板里那份也过期了
+        if (replay.value && replay.value.gameId !== message.state.gameId) replay.value = null;
       } else {
         events.value = [...events.value, ...message.events].slice(-MAX_KEPT_EVENTS);
       }
@@ -119,5 +127,24 @@ export function useGameSocket() {
     socket?.close();
   });
 
-  return { state, events, streaming, connected, lastError, connect, send };
+  function openReplay(day?: number): void {
+    send({ type: 'replay', ...(day === undefined ? {} : { day }) });
+  }
+
+  function closeReplay(): void {
+    replay.value = null;
+  }
+
+  return {
+    state,
+    events,
+    streaming,
+    replay,
+    connected,
+    lastError,
+    connect,
+    send,
+    openReplay,
+    closeReplay,
+  };
 }

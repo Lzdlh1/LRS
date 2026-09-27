@@ -1,6 +1,6 @@
 import { eventsFor, type GameState, type PendingRequest } from '@lrs/core-engine';
 import type { LlmRouter } from '@lrs/llm-router';
-import type { Action, GameEvent, Logger, SeatId, SpeechContext } from '@lrs/shared';
+import type { Action, GameEvent, Logger, Role, SeatId, SpeechContext } from '@lrs/shared';
 import { Agent } from './agent.ts';
 import { PHASE_LABELS } from './labels.ts';
 import { applyEvents, createFacts, recordClaim, type PublicFacts } from './memory/facts.ts';
@@ -10,6 +10,17 @@ export interface AiSeat {
   seat: SeatId;
   name: string;
   profile: AgentProfile;
+}
+
+/** 一次 AI 决策的可复盘信息 */
+export interface DecisionLogEntry {
+  seat: SeatId;
+  kind: string;
+  reasoning: string;
+  stance: string;
+  push: SeatId | null;
+  mood: string;
+  claim: { role: Role; note: string } | null;
 }
 
 export interface AgentHostOptions {
@@ -23,6 +34,8 @@ export interface AgentHostOptions {
   onSpeechDelta?: (seat: SeatId, delta: string) => void;
   /** 发言生成完毕的回调 */
   onSpeech?: (seat: SeatId, text: string) => void;
+  /** 每次决策完成后的回调，供复盘与离线分析使用 */
+  onDecision?: (entry: DecisionLogEntry) => void;
 }
 
 export interface CreateHostOptions {
@@ -37,6 +50,7 @@ export interface CreateHostOptions {
   enableReflection?: boolean;
   onSpeechDelta?: (seat: SeatId, delta: string) => void;
   onSpeech?: (seat: SeatId, text: string) => void;
+  onDecision?: (entry: DecisionLogEntry) => void;
 }
 
 function speechContextFor(phase: GameState['phase']): SpeechContext | null {
@@ -69,6 +83,7 @@ export class AgentHost {
   private readonly reflection: boolean;
   private readonly onSpeech: ((seat: SeatId, text: string) => void) | null;
   private readonly onSpeechDelta: ((seat: SeatId, delta: string) => void) | null;
+  private readonly onDecision: ((entry: DecisionLogEntry) => void) | null;
   private reflecting = false;
 
   constructor(options: AgentHostOptions) {
@@ -76,6 +91,7 @@ export class AgentHost {
     this.reflection = options.enableReflection ?? true;
     this.onSpeech = options.onSpeech ?? null;
     this.onSpeechDelta = options.onSpeechDelta ?? null;
+    this.onDecision = options.onDecision ?? null;
     this.facts = createFacts(options.seatCount);
     this.agents = new Map(
       options.seats.map((seat) => [
@@ -150,6 +166,16 @@ export class AgentHost {
       });
     }
 
+    this.onDecision?.({
+      seat: pending.seat,
+      kind,
+      reasoning: result.decision.reasoning,
+      stance: result.decision.stance,
+      push: result.decision.push,
+      mood: result.decision.mood,
+      claim: result.claim,
+    });
+
     if (result.action.kind === 'speak') {
       this.logger.debug('AI 发言', { seat: pending.seat, kind, length: result.action.text.length });
       this.onSpeech?.(pending.seat, result.action.text);
@@ -220,5 +246,6 @@ export function createAgentHost(options: CreateHostOptions): AgentHost {
     enableReflection: options.enableReflection,
     onSpeech: options.onSpeech,
     onSpeechDelta: options.onSpeechDelta,
+    onDecision: options.onDecision,
   });
 }

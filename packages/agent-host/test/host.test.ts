@@ -2,7 +2,7 @@ import { choicesFor, createGame, needsSpeech, pendingRequest, step, type Pending
 import { LlmRouter, MockProvider } from '@lrs/llm-router';
 import { createLogger, nullSink, type Action, type GameEvent, type Role } from '@lrs/shared';
 import { describe, expect, it } from 'vitest';
-import { createAgentHost } from '../src/host.ts';
+import { createAgentHost, type DecisionLogEntry } from '../src/host.ts';
 import { applyEvent, createFacts, recordClaim } from '../src/memory/facts.ts';
 import { pickProfiles, BUILTIN_PROFILES } from '../src/profiles.ts';
 import { GUESS_VALUES } from '../src/schema.ts';
@@ -223,6 +223,33 @@ describe('Agent 决策映射', () => {
     // 提交给引擎后必须被接受（不能出现 action_rejected）
     const after = step(game.state, action);
     expect(after.events.some((event) => event.payload.t === 'action_rejected')).toBe(false);
+  });
+
+  it('每次决策完成后回调出可复盘的推理依据', async () => {
+    const rng = seededRng(7);
+    const entries: DecisionLogEntry[] = [];
+    const host = createAgentHost({
+      router: makeRouter(mockBrain(rng)),
+      logger,
+      humanSeats: [1],
+      seatCount: 9,
+      names: NAMES,
+      rng: seededRng(3),
+      enableReflection: false,
+      onDecision: (entry) => entries.push(entry),
+    });
+
+    const game = createGame({ fixedRoles: FIXED_ROLES, humanSeats: [1] });
+    host.observe(game.events);
+
+    const pending = pendingRequest(game.state);
+    expect(pending).not.toBeNull();
+    await host.act(game.state, pending!);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ seat: pending!.seat });
+    expect(entries[0]!.reasoning.length).toBeGreaterThan(0);
+    expect(entries[0]!.kind.length).toBeGreaterThan(0);
   });
 
   it('发言阶段会先决策再生成发言文本', async () => {

@@ -16,7 +16,9 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p packages/web/tsconfig.json",
     "dev:server": "node --env-file-if-exists=.env packages/server/src/index.ts",
     "dev:web": "npm run dev -w packages/web",
-    "build:web": "npm run build -w packages/web"
+    "build:web": "npm run build -w packages/web",
+    "ai:game": "node --env-file-if-exists=.env packages/server/scripts/play-game.ts",
+    "ai:usage": "node --env-file-if-exists=.env packages/server/scripts/play-game.ts --usage"
   },
   "devDependencies": {
     "@types/node": "^26.6.3",

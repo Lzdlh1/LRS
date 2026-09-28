@@ -86,8 +86,8 @@ interface Harness {
   baseUrl: string;
 }
 
-async function start(): Promise<Harness> {
-  const base = loadConfig({}, tempDir());
+async function start(env: Record<string, string> = {}): Promise<Harness> {
+  const base = loadConfig(env, tempDir());
   const config: ServerConfig = {
     ...base,
     port: 0,
@@ -153,6 +153,29 @@ async function firstSnapshot(client: Client): Promise<Snapshot> {
 }
 
 describe('HTTP 接口', () => {
+  it('设了访问口令时：先给一页输入框，填对了换 cookie，填错了说口令不对', async () => {
+    const { baseUrl } = await start({ ACCESS_TOKEN: 'seed-token-123' });
+
+    const denied = await fetch(`${baseUrl}/`);
+    expect(denied.status).toBe(401);
+    const page = await denied.text();
+    expect(page).toContain('name="token"');
+    expect(page).toContain('访问口令');
+    expect(page, '第一次来不该说口令不对').not.toContain('口令不对');
+
+    const wrong = await fetch(`${baseUrl}/?token=nope`);
+    expect(wrong.status).toBe(401);
+    expect(await wrong.text()).toContain('口令不对');
+
+    const ok = await fetch(`${baseUrl}/?token=seed-token-123`, { redirect: 'manual' });
+    expect(ok.status).toBe(302);
+    const cookie = (ok.headers.get('set-cookie') ?? '').split(';')[0]!;
+    expect(cookie).toContain('lrs_token=');
+
+    const withCookie = await fetch(`${baseUrl}/health`, { headers: { cookie } });
+    expect(withCookie.status).toBe(200);
+  });
+
   it('/health 返回房间信息', async () => {
     const { baseUrl } = await start();
     const response = await fetch(`${baseUrl}/health`);

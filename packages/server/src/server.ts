@@ -56,6 +56,42 @@ function createWebHandler(webDir: string): ((url: URL, res: ServerResponse) => b
 const TOKEN_COOKIE = 'lrs_token';
 
 /**
+ * 没带（或带错）访问口令时给的一页。
+ *
+ * 原来只回一行纯文本「请在地址后面加上 ?token=…」，等于让人自己拼 URL ——
+ * 手机上根本没法用。改成一个输入框：填一次，服务端换成 cookie，
+ * 之后这台设备直接打开就行。
+ */
+function unlockPage(wrong: boolean): string {
+  return `<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>需要访问口令</title>
+<style>
+  body{margin:0;height:100vh;display:grid;place-items:center;background:#0a0d14;color:#d9dfee;
+       font-family:'PingFang SC','Microsoft YaHei',system-ui,sans-serif;}
+  form{width:min(340px,86vw);display:flex;flex-direction:column;gap:12px;}
+  h1{margin:0;font-size:17px;font-weight:600;letter-spacing:.08em;}
+  p{margin:0;font-size:12.5px;line-height:1.8;color:#8f99b0;}
+  input,button{font-family:inherit;font-size:14px;border-radius:8px;padding:11px 12px;}
+  input{background:#05070c;border:1px solid #222a3a;color:#d9dfee;}
+  input:focus{outline:none;border-color:#6b7bd6;}
+  button{background:#2a3350;border:1px solid #4d5a94;color:#cdd6ff;cursor:pointer;}
+  .bad{color:#d2554a;}
+</style></head>
+<body>
+  <form method="get" action="/">
+    <h1>需要访问口令</h1>
+    <p>${wrong ? '<span class="bad">口令不对</span>，再试一次：' : '这是一个私人站点，进来要口令。'}</p>
+    <input name="token" type="password" autofocus autocomplete="off" placeholder="访问口令"/>
+    <button type="submit">进入</button>
+    <p>注意：这里要的是<b>访问口令</b>（进站点的门），不是你 DeepSeek 的 API Key，
+       也不是设置页里的管理口令。填对一次之后这台设备记 30 天。</p>
+  </form>
+</body></html>`;
+}
+
+/**
  * 一道极简门：设了 `ACCESS_TOKEN` 才启用。
  *
  * 认两种形式 —— 地址里带的 `?token=xxx`，以及换到手之后的 cookie。
@@ -129,8 +165,9 @@ export function startServer(options: StartServerOptions): RunningServer {
     }
 
     if (!gate.allows(req, url)) {
-      res.writeHead(401, { 'content-type': 'text/plain; charset=utf-8' });
-      res.end('需要访问口令：请在地址后面加上 ?token=你的口令');
+      // 带了 token 还是不过 = 填错了；什么都没带 = 第一次来
+      res.writeHead(401, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+      res.end(unlockPage(url.searchParams.has('token')));
       return;
     }
 

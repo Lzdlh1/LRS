@@ -24,6 +24,9 @@ const {
   closeReplay,
   openUsage,
   closeUsage,
+  pause,
+  resume,
+  stopGame,
 } = useGameSocket();
 
 onMounted(connect);
@@ -67,6 +70,11 @@ function autoPlay(count: number): void {
 function newGame(): void {
   send({ type: 'newGame' });
 }
+
+/** 中止是不可逆的（这局就废了），所以问一句 */
+function abort(): void {
+  if (window.confirm('中止本局？这一局会直接作废，之后只能新开一局。')) stopGame();
+}
 </script>
 
 <template>
@@ -83,9 +91,28 @@ function newGame(): void {
         🧪 解药 {{ state.witchPotions.antidote }} · 毒药 {{ state.witchPotions.poison }}
       </span>
 
+      <span v-if="state?.stopped" class="chip aborted">已中止</span>
+      <span v-else-if="state?.paused" class="chip paused">⏸ 已暂停 · 不再消耗</span>
+
       <span class="spacer" />
 
       <span class="conn" :class="{ ok: connected }">{{ connected ? '已连接' : '未连接' }}</span>
+      <button
+        v-if="state && state.winner === null && !state.stopped"
+        :class="{ primary: state.paused }"
+        :title="state.paused ? '继续推进对局' : '冻结局面：暂停期间不排超时兜底，也不会发起任何模型调用'"
+        @click="state.paused ? resume() : pause()"
+      >
+        {{ state.paused ? '▶ 继续' : '⏸ 暂停' }}
+      </button>
+      <button
+        v-if="state && state.winner === null && !state.stopped"
+        class="ghost"
+        title="中止本局：立刻停手，不会再自动推进"
+        @click="abort"
+      >
+        中止
+      </button>
       <button
         class="viewer"
         :class="{ primary: godView }"
@@ -199,6 +226,19 @@ function newGame(): void {
   background: rgba(210, 85, 74, 0.1);
   border-color: rgba(210, 85, 74, 0.4);
   color: #c08480;
+}
+
+/* 暂停/中止是要看得见的状态：这两个 chip 用更实的底色 */
+.chip.paused {
+  background: rgba(217, 178, 106, 0.16);
+  border-color: rgba(217, 178, 106, 0.65);
+  color: var(--gold);
+}
+
+.chip.aborted {
+  background: rgba(210, 85, 74, 0.16);
+  border-color: rgba(210, 85, 74, 0.6);
+  color: #e09a94;
 }
 
 .conn {

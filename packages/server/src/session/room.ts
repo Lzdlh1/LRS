@@ -92,6 +92,15 @@ export class GameRoom {
   private timer: NodeJS.Timeout | null = null;
   private deadlineAt = 0;
   private finished = false;
+  /**
+   * 真人按下的暂停。
+   *
+   * 为什么必须有：真人座位的待办会超时兜底，兜底之后轮到 AI 就会发起真实模型调用，
+   * 一局就这么自己走完了 —— 界面开着没人管的时候，这是真金白银。
+   */
+  private paused = false;
+  /** 中止：终态，不再有任何推进，只能新开一局 */
+  private stopped = false;
 
   constructor(options: GameRoomOptions) {
     this.roomId = options.id ?? randomUUID();
@@ -163,6 +172,15 @@ export class GameRoom {
       case 'usage':
         this.sendUsage(id, message.scope);
         return;
+      case 'pause':
+        this.setPaused(true);
+        return;
+      case 'resume':
+        this.setPaused(false);
+        return;
+      case 'stop':
+        this.stopGame();
+        return;
       default: {
         const unknown = message as { type?: string };
         this.logger.warn('收到未知消息', { channel: id, type: unknown.type });
@@ -173,6 +191,17 @@ export class GameRoom {
   // ── 推进 ──
 
   submit(action: Action, origin = 'debug'): void {
+    if (this.paused || this.stopped) {
+      this.logger.warn('对局处于暂停/中止状态，忽略这次推进', {
+        origin,
+        kind: action.kind,
+        actor: action.actor,
+        paused: this.paused,
+        stopped: this.stopped,
+      });
+      return;
+    }
+
     this.clearTimer();
     const result = step(this.state, action);
     this.state = result.state;
@@ -200,6 +229,48 @@ export class GameRoom {
     }
   }
 
+  /**
+   * 暂停 / 继续。
+   *
+   * 暂停期间：不排超时兜底、不发起 AI 调用、外部推进一律拒绝 ——
+   * 也就是说这个开关一按，模型花销就是 0。
+   */
+  private setPaused(paused: boolean): void {
+    if (this.stopped || this.state.winner !== null || this.paused === paused) return;
+    this.paused = paused;
+
+    this.logger.info(paused ? '对局已暂停' : '对局已继续', {
+      gameId: this.currentGameId,
+      seq: this.state.seq,
+    });
+
+    if (paused) {
+      this.clearTimer();
+      this.deadlineAt = 0;
+    }
+    this.broadcastState();
+    if (!paused) {
+      this.armTimer();
+      this.scheduleAi();
+    }
+  }
+
+  /** 中止本局：立刻停手且不再恢复，要接着玩只能新开一局 */
+  private stopGame(): void {
+    if (this.stopped) return;
+    this.stopped = true;
+    this.paused = false;
+    this.clearTimer();
+    this.deadlineAt = 0;
+
+    this.logger.info('对局被中止', {
+      gameId: this.currentGameId,
+      seq: this.state.seq,
+      pending: this.state.pending?.seat ?? null,
+    });
+    this.broadcastState();
+  }
+
   newGame(seed?: number): void {
     this.clearTimer();
     this.currentGameId = randomUUID();
@@ -218,6 +289,8 @@ export class GameRoom {
 
   private startNewGame(seed?: number): GameState {
     this.finished = false;
+    this.paused = false;
+    this.stopped = false;
     this.history = [];
     this.aiToken = '';
     this.prefetch.clear();
@@ -319,6 +392,12 @@ export class GameRoom {
       return;
     }
 
+    // 暂停/中止期间一律不排兜底计时器：兜底会往前推局面，往前推就要花钱
+    if (this.paused || this.stopped) {
+      this.deadlineAt = 0;
+      return;
+    }
+
     const seat = pending.seat;
 
     // AI 的节奏由模型路由层的超时与降级控制，这里不再叠一层定时器
@@ -362,6 +441,12 @@ export class GameRoom {
   private scheduleAi(): void {
     const host = this.host;
     if (!host) return;
+
+    // 暂停/中止期间连想都不去想
+    if (this.paused || this.stopped) {
+      this.aiToken = '';
+      return;
+    }
 
     // 没人看着就别动：否则服务一启动，AI 会先自己把一整夜加 8 个上警全走完。
     // 人一连上来 subscribe() 会重新叫一次。
@@ -545,6 +630,8 @@ export class GameRoom {
       state: this.state,
       viewer,
       deadlineAt: this.deadlineAt,
+      paused: this.paused,
+      stopped: this.stopped,
     });
   }
 
@@ -557,6 +644,17 @@ export class GameRoom {
         subscriber.viewer,
       ),
     });
+  }
+
+  /**
+   * 只同步房间状态、不带引擎事件的广播。
+   *
+   * 暂停/中止这类开关不产生事件流，但界面必须立刻看到。
+   */
+  private broadcastState(): void {
+    for (const subscriber of this.subscribers.values()) {
+      subscriber.send({ type: 'update', state: this.project(subscriber.viewer), events: [] });
+    }
   }
 
   private broadcast(delta: readonly GameEvent[]): void {

@@ -521,6 +521,65 @@ describe('用量看板', () => {
   });
 });
 
+describe('暂停与中止', () => {
+  it('暂停之后：不超时兜底、手动推进也被拒绝', () => {
+    vi.useFakeTimers();
+    const { room } = makeRoom(777);
+    const god = collector();
+    god.subscribe(room, 'god', 'god');
+    const seqBefore = god.state().lastSeq;
+
+    room.handleMessage('god', { type: 'pause' });
+    expect(god.state().paused).toBe(true);
+
+    // 十分钟过去，局面该一动不动
+    vi.advanceTimersByTime(10 * 60 * 1000);
+    expect(god.state().lastSeq).toBe(seqBefore);
+
+    // 就算有人硬塞一手，也不接受
+    const pending = god.state().pending;
+    if (pending) room.submit(driveAction(pending)!, 'client');
+    expect(god.state().lastSeq).toBe(seqBefore);
+  });
+
+  it('继续之后接着走', () => {
+    const { room } = makeRoom(777);
+    const god = collector();
+    god.subscribe(room, 'god', 'god');
+    const seqBefore = god.state().lastSeq;
+
+    room.handleMessage('god', { type: 'pause' });
+    room.handleMessage('god', { type: 'resume' });
+    expect(god.state().paused).toBe(false);
+
+    const pending = god.state().pending!;
+    room.submit(driveAction(pending)!, 'client');
+    expect(god.state().lastSeq).toBeGreaterThan(seqBefore);
+  });
+
+  it('中止是终态：继续不回来，超时也不推进，只能新开一局', () => {
+    vi.useFakeTimers();
+    const { room } = makeRoom(777);
+    const god = collector();
+    god.subscribe(room, 'god', 'god');
+    const seqBefore = god.state().lastSeq;
+
+    room.handleMessage('god', { type: 'stop' });
+    const after = god.state();
+    expect(after.stopped).toBe(true);
+    expect(after.pending, '中止之后不该再摆出一手待办').toBeNull();
+
+    room.handleMessage('god', { type: 'resume' });
+    expect(god.state().stopped).toBe(true);
+    vi.advanceTimersByTime(10 * 60 * 1000);
+    expect(god.state().lastSeq).toBe(seqBefore);
+
+    room.newGame(999);
+    expect(god.state().stopped).toBe(false);
+    expect(god.state().paused).toBe(false);
+  });
+});
+
 /** 只记录调用时序的假 AI；真实 AI 的接线由 ai.test.ts 覆盖 */
 function timingHost(options: { delayMs: number; humanSeat: SeatId }) {
   const calls: { seat: SeatId; kind: string; at: number }[] = [];

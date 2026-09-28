@@ -160,6 +160,19 @@ export function useGameSocket() {
     usage.value = null;
   }
 
+  function pause(): void {
+    send({ type: 'pause' });
+  }
+
+  function resume(): void {
+    send({ type: 'resume' });
+  }
+
+  /** 中止本局：立刻停手，且不会自己恢复 */
+  function stopGame(): void {
+    send({ type: 'stop' });
+  }
+
   return {
     state,
     events,
@@ -174,5 +187,8 @@ export function useGameSocket() {
     closeReplay,
     openUsage,
     closeUsage,
+    pause,
+    resume,
+    stopGame,
   };
 }

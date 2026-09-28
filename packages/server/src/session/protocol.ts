@@ -55,6 +55,14 @@ export interface ClientState {
    * 为 true 时 pending 与阶段细节都不会下发。
    */
   masked: boolean;
+  /**
+   * 被真人按下了暂停：局面冻结，既排超时兜底也不发起任何模型调用。
+   *
+   * 这是「花钱」这件事的唯一硬开关 —— 界面留着没人管的时候，一局会自己走完。
+   */
+  paused: boolean;
+  /** 本局被中止：终态，只能新开一局 */
+  stopped: boolean;
   winner: Camp | null;
   lastSeq: number;
 }
@@ -101,7 +109,10 @@ export type ClientMessage =
   | { type: 'newGame'; seed?: number }
   | { type: 'autoPlay'; count?: number }
   | { type: 'replay'; day?: number }
-  | { type: 'usage'; scope: UsageScope };
+  | { type: 'usage'; scope: UsageScope }
+  | { type: 'pause' }
+  | { type: 'resume' }
+  | { type: 'stop' };
 
 export type ServerMessage =
   | { type: 'snapshot'; state: ClientState; events: GameEvent[] }
@@ -151,6 +162,8 @@ export interface ProjectArgs {
   viewer: Viewer;
   /** 当前待办的绝对到期时间戳；无待办则为 0 */
   deadlineAt: number;
+  paused: boolean;
+  stopped: boolean;
 }
 
 /**
@@ -159,7 +172,15 @@ export interface ProjectArgs {
  * 这是信息裁剪的第二道地方（第一道是事件流的 visibility 过滤）：
  * 状态里同样藏着身份、药水、夜间信息，必须在这里按视角抹掉。
  */
-export function projectState({ roomId, gameId, state, viewer, deadlineAt }: ProjectArgs): ClientState {
+export function projectState({
+  roomId,
+  gameId,
+  state,
+  viewer,
+  deadlineAt,
+  paused,
+  stopped,
+}: ProjectArgs): ClientState {
   const isGod = viewer === 'god';
   const viewerSeat = typeof viewer === 'number' ? viewer : null;
 
@@ -200,9 +221,10 @@ export function projectState({ roomId, gameId, state, viewer, deadlineAt }: Proj
       withdrawn: [...state.chief.withdrawn],
     },
     witchPotions: seesPotions ? { ...state.witchPotions } : null,
-    // masked 时连「轮到谁」都不下发，否则夜间顺序 + 座位号 = 身份
+    // masked 时连「轮到谁」都不下发，否则夜间顺序 + 座位号 = 身份。
+    // 中止之后也不下发：这一手已经不可能被兑现了，摆出来只会误导。
     pending:
-      state.pending && !masked
+      state.pending && !masked && !stopped
         ? {
             seat: state.pending.seat,
             options: seesOptions ? state.pending.options.map((o) => ({ ...o, targets: [...o.targets] })) : [],
@@ -211,6 +233,8 @@ export function projectState({ roomId, gameId, state, viewer, deadlineAt }: Proj
           }
         : null,
     masked,
+    paused,
+    stopped,
     winner: state.winner,
     lastSeq: state.seq,
   };

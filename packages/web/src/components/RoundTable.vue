@@ -60,10 +60,20 @@ function roleTone(role: Role | null): string {
       <div class="stage">
         <div class="stage-title">{{ stageTitle }}</div>
 
-        <template v-if="state?.winner">
+        <template v-if="state?.stopped">
+          <div class="stage-big aborted">本局已中止</div>
+          <div class="stage-sub">不会再自动推进，点「新开一局」重来</div>
+        </template>
+
+        <template v-else-if="state?.winner">
           <div class="stage-big" :class="state.winner === 'wolf' ? 'wolf' : 'good'">
             {{ state.winner === 'wolf' ? '狼人胜' : '好人胜' }}
           </div>
+        </template>
+
+        <template v-else-if="state?.paused">
+          <div class="stage-big paused">已暂停</div>
+          <div class="stage-sub">局面冻结中，不会消耗模型调用</div>
         </template>
 
         <template v-else-if="state?.masked">
@@ -229,6 +239,16 @@ function roleTone(role: Role | null): string {
 .stage-big.good {
   color: var(--jade);
   text-shadow: 0 0 5cqmin rgba(88, 211, 166, 0.35);
+}
+
+.stage-big.paused {
+  color: var(--gold);
+  text-shadow: 0 0 5cqmin rgba(217, 178, 106, 0.35);
+}
+
+.stage-big.aborted {
+  color: #c08480;
+  text-shadow: none;
 }
 
 .stage-sub {

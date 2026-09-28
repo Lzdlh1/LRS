@@ -22,7 +22,11 @@ const speech = ref('');
 const pending = computed(() => props.state?.pending ?? null);
 const choices = computed(() => choicesFor(pending.value));
 const canSpeak = computed(() => needsSpeech(pending.value));
-const isOver = computed(() => props.state?.winner != null);
+const stopped = computed(() => props.state?.stopped === true);
+const paused = computed(() => props.state?.paused === true);
+const isOver = computed(() => props.state?.winner != null || stopped.value);
+/** 冻结中：这时候点什么都会被服务端拒绝，干脆不给点 */
+const frozen = computed(() => paused.value || stopped.value);
 /** 玩家视角下，如果不是轮到自己，选项会是空的 */
 const observing = computed(() => pending.value !== null && pending.value.options.length === 0);
 const mine = computed(() => pending.value !== null && pending.value.options.length > 0);
@@ -43,9 +47,17 @@ function submitSpeech(): void {
 <template>
   <footer class="panel">
     <div class="status">
-      <template v-if="isOver">
+      <template v-if="stopped">
+        <span class="tag danger">本局已中止</span>
+        <span class="dim">点「新开一局」重来</span>
+      </template>
+      <template v-else-if="isOver">
         <span class="tag success">{{ state?.winner === 'wolf' ? '狼人胜' : '好人胜' }}</span>
         <span class="dim">对局已结束，可以点「新开一局」再来一把</span>
+      </template>
+      <template v-else-if="paused">
+        <span class="tag warn">已暂停</span>
+        <span class="dim">局面冻结中，点顶部「▶ 继续」接着打</span>
       </template>
       <template v-else-if="pending">
         <span class="tag" :class="{ active: mine }">
@@ -61,7 +73,7 @@ function submitSpeech(): void {
       <span v-if="error" class="tag danger">{{ error }}</span>
     </div>
 
-    <div v-if="pending" class="body">
+    <div v-if="pending && !frozen" class="body">
       <div v-if="canSpeak" class="speech">
         <textarea
           v-model="speech"
@@ -85,8 +97,8 @@ function submitSpeech(): void {
 
     <div class="debug">
       <span class="debug-label">调试</span>
-      <button class="ghost tiny" :disabled="isOver" @click="emit('auto', 1)">代打一步</button>
-      <button class="ghost tiny" :disabled="isOver" @click="emit('auto', 30)">代打 30 步</button>
+      <button class="ghost tiny" :disabled="isOver || frozen" @click="emit('auto', 1)">代打一步</button>
+      <button class="ghost tiny" :disabled="isOver || frozen" @click="emit('auto', 30)">代打 30 步</button>
       <button class="ghost tiny" @click="emit('newGame')">新开一局</button>
     </div>
   </footer>
@@ -125,6 +137,12 @@ function submitSpeech(): void {
   background: #2a3350;
   border-color: #4d5a94;
   color: #cdd6ff;
+}
+
+.tag.warn {
+  background: rgba(217, 178, 106, 0.16);
+  border-color: rgba(217, 178, 106, 0.6);
+  color: var(--gold);
 }
 
 .tag.success {

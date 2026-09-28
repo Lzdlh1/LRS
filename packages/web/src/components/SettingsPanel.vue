@@ -4,6 +4,7 @@ import {
   fetchAdminState,
   lock,
   revealKey,
+  saveAccessToken,
   saveConfig,
   setupPassphrase,
   unlock,
@@ -32,6 +33,8 @@ const pass1 = ref('');
 const pass2 = ref('');
 const newPass1 = ref('');
 const newPass2 = ref('');
+const newToken1 = ref('');
+const newToken2 = ref('');
 
 /** 表单草稿；Key 用 null 表示「这一项没动」，空串表示「明确清空」 */
 const form = reactive({
@@ -121,6 +124,26 @@ const submitChangePassphrase = (): void =>
     notice.value = '口令已更新，其它设备上的解锁状态已失效。';
   });
 
+/** 访问口令：改完这台设备要带着新口令重进一次 */
+const submitAccessToken = (): void =>
+  void run(async () => {
+    const token = newToken1.value.trim();
+    if (!/^[A-Za-z0-9._~-]{8,64}$/.test(token)) {
+      throw new Error('口令要 8~64 位，只能用字母、数字和 . _ ~ -');
+    }
+    if (token !== newToken2.value.trim()) throw new Error('两次输入的口令不一致');
+    if (
+      !window.confirm(
+        '改完之后：这台设备会自动带着新口令重进一次；其它设备（含手机）要重新输一次新口令才能进。继续？',
+      )
+    ) {
+      return;
+    }
+    await saveAccessToken(token);
+    // 手里那个 cookie 已经是旧的了，带着新口令重新访问一次换发
+    window.location.href = `/?token=${encodeURIComponent(token)}`;
+  });
+
 const submitSave = (): void =>
   void run(async () => {
     const keys: Partial<Record<Provider, string>> = {};
@@ -166,6 +189,13 @@ function keyHint(provider: Provider): string {
   if (view.source === 'env') return `${view.masked} · 当前就用它，可点「查看」`;
   return `${view.masked} · 由界面管理`;
 }
+
+const accessHint = computed(() => {
+  const view = state.value?.access;
+  if (!view) return '';
+  if (!view.set) return '未设置：拿到地址的人都能进（只在自己电脑上跑时可以不管）';
+  return view.source === 'env' ? `${view.masked} · 当前来自 .env` : `${view.masked} · 由界面设置`;
+});
 </script>
 
 <template>
@@ -279,6 +309,30 @@ function keyHint(provider: Provider): string {
             保存后**对下一局生效**，正在跑的那局还用旧的模型配置。想看当前生效的是哪家，
             看顶部的「模型可用」标记即可。
           </p>
+
+          <div class="block">
+            <h4>访问口令（进站点的门）</h4>
+            <p class="foot-note">
+              当前：{{ accessHint }}。<br />
+              它和下面的管理口令是两回事：这个管<b>整个站点</b>能不能打开，
+              新设备第一次进来要在那页输入框里填一次。改完其它设备会被踢回门口。
+            </p>
+            <div class="two">
+              <label class="field">
+                <span>新口令（8~64 位，字母数字与 . _ ~ -）</span>
+                <input v-model="newToken1" type="password" autocomplete="new-password" spellcheck="false" />
+              </label>
+              <label class="field">
+                <span>再输一遍</span>
+                <input v-model="newToken2" type="password" autocomplete="new-password" spellcheck="false" />
+              </label>
+            </div>
+            <div>
+              <button class="ghost" :disabled="busy || newToken1 === ''" @click="submitAccessToken">
+                修改访问口令
+              </button>
+            </div>
+          </div>
 
           <div class="block">
             <h4>管理口令</h4>

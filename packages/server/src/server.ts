@@ -92,28 +92,36 @@ function unlockPage(wrong: boolean): string {
 }
 
 /**
- * 一道极简门：设了 `ACCESS_TOKEN` 才启用。
+ * 一道极简门：口令非空才启用。
+ *
+ * 口令是**取值函数**而不是启动时的快照：设置页可以改它，改完要立刻生效。
  *
  * 认两种形式 —— 地址里带的 `?token=xxx`，以及换到手之后的 cookie。
  * 前者用过一次就重定向掉，免得口令留在地址栏和浏览记录里。
- * 没设口令时完全不设防（本地开发就是这种），行为与以前一模一样。
  */
-function createGate(accessToken: string): {
+function createGate(current: () => string): {
   enabled: boolean;
   matches: (url: URL) => boolean;
   allows: (req: IncomingMessage, url: URL) => boolean;
 } {
-  const enabled = accessToken !== '';
-  const fromQuery = (url: URL): boolean => enabled && url.searchParams.get('token') === accessToken;
-  const fromCookie = (req: IncomingMessage): boolean =>
-    (req.headers.cookie ?? '')
+  const fromQuery = (url: URL): boolean => {
+    const token = current();
+    return token !== '' && url.searchParams.get('token') === token;
+  };
+  const fromCookie = (req: IncomingMessage): boolean => {
+    const token = current();
+    if (token === '') return true;
+    return (req.headers.cookie ?? '')
       .split(';')
-      .some((part) => part.trim() === `${TOKEN_COOKIE}=${accessToken}`);
+      .some((part) => part.trim() === `${TOKEN_COOKIE}=${token}`);
+  };
 
   return {
-    enabled,
+    get enabled() {
+      return current() !== '';
+    },
     matches: fromQuery,
-    allows: (req, url) => !enabled || fromQuery(url) || fromCookie(req),
+    allows: (req, url) => current() === '' || fromQuery(url) || fromCookie(req),
   };
 }
 
@@ -128,6 +136,13 @@ export interface StartServerOptions {
   isAiLive?: () => boolean;
   /** 设置界面的后台；不传就关掉 /admin 这一块 */
   admin?: AdminHandler;
+  /**
+   * 当前生效的访问口令。
+   *
+   * 不传就用 `config.accessToken`。传了的话每次请求都现取 —— 设置页改完
+   * 立刻生效，不需要重启。
+   */
+  accessTokenOf?: () => string;
   /** 新连接的默认视角。默认上帝视角方便开发调试，M4 会改成玩家视角。 */
   defaultViewer?: 'god' | number;
 }
@@ -149,7 +164,9 @@ export function startServer(options: StartServerOptions): RunningServer {
   });
   let channelSeq = 0;
   const serveWeb = createWebHandler(config.webDir);
-  const gate = createGate(options.config.accessToken);
+  /** 每次现取：设置页改完口令立刻生效 */
+  const currentToken = (): string => options.accessTokenOf?.() ?? config.accessToken;
+  const gate = createGate(currentToken);
 
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
@@ -157,7 +174,7 @@ export function startServer(options: StartServerOptions): RunningServer {
     // 口令带对了就换成 cookie，并把地址里的 token 摘掉
     if (gate.matches(url)) {
       res.writeHead(302, {
-        'set-cookie': `${TOKEN_COOKIE}=${config.accessToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`,
+        'set-cookie': `${TOKEN_COOKIE}=${currentToken()}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`,
         location: url.pathname,
       });
       res.end();

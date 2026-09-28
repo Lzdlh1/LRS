@@ -36,7 +36,16 @@ const LLM_KEYS = {
 } as const;
 
 const ADMIN_PASS_KEY = 'admin.pass';
+const ACCESS_TOKEN_KEY = 'access.token';
 const keyName = (provider: Provider): string => `key.${provider}`;
+
+/**
+ * 访问口令的字符合集。
+ *
+ * 它会出现在 URL 查询参数里（第一次访问要带 `?token=`），所以只允许 URL 里
+ * 不需要转义的字符 —— 省掉一整类「手机上粘贴后编码变了」的玄学问题。
+ */
+export const ACCESS_TOKEN_PATTERN = /^[A-Za-z0-9._~-]{8,64}$/;
 
 export class SettingsStore {
   private readonly db: DatabaseSync;
@@ -106,6 +115,21 @@ export class SettingsStore {
 
   setAdminHash(value: string): void {
     this.set(ADMIN_PASS_KEY, value);
+  }
+
+  // ── 访问口令（进站点的那道门） ──
+
+  accessToken(): string {
+    return this.get(ACCESS_TOKEN_KEY) ?? '';
+  }
+
+  /** 界面里配过没有（配过就不再回落到 `.env`） */
+  hasOwnAccessToken(): boolean {
+    return this.get(ACCESS_TOKEN_KEY) !== null;
+  }
+
+  setAccessToken(token: string): void {
+    this.set(ACCESS_TOKEN_KEY, token);
   }
 }
 

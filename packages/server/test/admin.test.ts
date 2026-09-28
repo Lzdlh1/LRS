@@ -1,11 +1,11 @@
-﻿import { once } from 'node:events';
+import { once } from 'node:events';
 import { mkdtempSync, rmSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createLogger, nullSink } from '@lrs/shared';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createAdmin } from '../src/admin.ts';
+import { createAdmin, type AdminState } from '../src/admin.ts';
 import type { ServerConfig } from '../src/config.ts';
 import { loadConfig } from '../src/config.ts';
 import { startServer, type RunningServer } from '../src/server.ts';
@@ -50,8 +50,11 @@ interface Reply {
   body: Record<string, unknown>;
 }
 
-async function start(envKeys: Partial<Record<Provider, string>> = {}): Promise<Harness> {
-  const base = loadConfig({}, tempDir());
+async function start(
+  envKeys: Partial<Record<Provider, string>> = {},
+  accessTokenEnv = '',
+): Promise<Harness> {
+  const base = loadConfig(accessTokenEnv === '' ? {} : { ACCESS_TOKEN: accessTokenEnv }, tempDir());
   const config: ServerConfig = {
     ...base,
     port: 0,
@@ -68,6 +71,7 @@ async function start(envKeys: Partial<Record<Provider, string>> = {}): Promise<H
     settings,
     logger,
     envKeys: { deepseek: '', openai: '', custom: '', ...envKeys },
+    envAccessToken: accessTokenEnv,
     isLive: () => false,
     onConfigChanged: () => {
       reloads += 1;
@@ -80,6 +84,9 @@ async function start(envKeys: Partial<Record<Provider, string>> = {}): Promise<H
     wsLogger: logger,
     store: null,
     admin,
+    // 与 index.ts 同一套取值顺序：界面配过就用界面的，否则回落到 .env
+    accessTokenOf: () =>
+      settings.hasOwnAccessToken() ? settings.accessToken() : config.accessToken,
   });
   await once(running.server, 'listening');
   cleanups.push(() => running.close());
@@ -105,10 +112,21 @@ async function call(
 
   const text = await response.text();
   const raw = response.headers.get('set-cookie');
+
+  // 被门挡住时回的是 HTML 那一页，不是 JSON —— 别让解析把它变成异常
+  let body: Record<string, unknown> = {};
+  if (text !== '') {
+    try {
+      body = JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      body = { raw: text };
+    }
+  }
+
   return {
     status: response.status,
     cookie: raw === null ? null : raw.split(';')[0]!,
-    body: text === '' ? {} : (JSON.parse(text) as Record<string, unknown>),
+    body,
   };
 }
 
@@ -283,6 +301,48 @@ describe('设置后台：口令与 Key 的保护', () => {
 
     // 冷静期内即使口令对，也不放行
     expect(JSON.stringify(blocked.body)).toContain('秒后再试');
+  });
+
+  it('访问口令：能查来源与掩码，改完旧口令立刻失效、新口令可用', async () => {
+    const { baseUrl, settings } = await start({}, 'env-token-1234');
+    const gate = 'lrs_token=env-token-1234';
+
+    // 不带口令：被门挡在门外
+    expect((await call(baseUrl, '/admin/state')).status).toBe(401);
+
+    const before = await call(baseUrl, '/admin/state', { cookie: gate });
+    expect(before.status).toBe(200);
+    const access = before.body['access'] as { set: boolean; source: string; masked: string };
+    expect(access.set).toBe(true);
+    expect(access.source).toBe('env');
+    expect(access.masked).not.toContain('env-token-1234');
+    expect(access.masked).toContain('••••');
+
+    const setup = await call(baseUrl, '/admin/setup', {
+      method: 'POST',
+      cookie: gate,
+      body: { passphrase: 'lrs-pass-123' },
+    });
+    const cookie = `${gate}; ${setup.cookie}`;
+
+    // 太短、带特殊字符：都不给过
+    expect((await call(baseUrl, '/admin/token', { method: 'POST', cookie, body: { token: 'short' } })).status).toBe(400);
+    expect(
+      (await call(baseUrl, '/admin/token', { method: 'POST', cookie, body: { token: '有中文的口令12345' } })).status,
+    ).toBe(400);
+
+    const ok = await call(baseUrl, '/admin/token', {
+      method: 'POST',
+      cookie,
+      body: { token: 'my.new-token_2026' },
+    });
+    expect(ok.status).toBe(200);
+    expect(settings.accessToken()).toBe('my.new-token_2026');
+    expect((ok.body['state'] as AdminState).access.source).toBe('ui');
+
+    // 旧口令当场作废（这台设备手里的 cookie 也一起作废，前端会带着新口令重进）
+    expect((await call(baseUrl, '/admin/state', { cookie: gate })).status).toBe(401);
+    expect((await call(baseUrl, '/admin/state', { cookie: 'lrs_token=my.new-token_2026' })).status).toBe(200);
   });
 
   it('非法参数不会写进库', async () => {

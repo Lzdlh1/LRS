@@ -1,7 +1,13 @@
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Logger } from '@lrs/shared';
-import { isProvider, PROVIDERS, type Provider, type SettingsStore } from './store/settingsStore.ts';
+import {
+  ACCESS_TOKEN_PATTERN,
+  isProvider,
+  PROVIDERS,
+  type Provider,
+  type SettingsStore,
+} from './store/settingsStore.ts';
 
 /**
  * 设置界面的后台。
@@ -31,6 +37,17 @@ export interface KeyView {
 export interface AdminState {
   passphraseSet: boolean;
   unlocked: boolean;
+  /**
+   * 进站点的那道门。
+   *
+   * 只给掩码：改完口令之后当前设备会带着新口令重新访问一次，
+   * 所以不需要在界面上把完整口令摆出来。
+   */
+  access: {
+    set: boolean;
+    source: 'ui' | 'env' | 'none';
+    masked: string;
+  };
   llm: {
     provider: Provider;
     cheapModel: string;
@@ -53,6 +70,8 @@ export interface AdminOptions {
    * 否则界面里配过之前，点查看会什么都不显示。它只会回给已解锁的会话。
    */
   envKeys: Record<Provider, string>;
+  /** `.env` 里的访问口令（`ACCESS_TOKEN`），界面改过之后就不再回落到它 */
+  envAccessToken: string;
   /** 当前生效的档位是否可用 */
   isLive: () => boolean;
 }
@@ -152,11 +171,25 @@ export function createAdmin(options: AdminOptions): AdminHandler {
   const effectiveKey = (provider: Provider): string =>
     settings.hasOwnApiKey(provider) ? settings.apiKey(provider) : options.envKeys[provider];
 
+  /** 当前真正在用的访问口令，以及它是哪来的 */
+  const accessView = (): AdminState['access'] => {
+    if (settings.hasOwnAccessToken()) {
+      const token = settings.accessToken();
+      return token === ''
+        ? { set: false, source: 'ui', masked: '' }
+        : { set: true, source: 'ui', masked: maskKey(token) };
+    }
+    return options.envAccessToken === ''
+      ? { set: false, source: 'none', masked: '' }
+      : { set: true, source: 'env', masked: maskKey(options.envAccessToken) };
+  };
+
   const readState = (req: IncomingMessage): AdminState => {
     const stored = settings.readLlm();
     return {
       passphraseSet: settings.adminHash() !== null,
       unlocked: unlocked(req),
+      access: accessView(),
       llm: {
         provider: stored.provider,
         cheapModel: stored.cheapModel,
@@ -303,6 +336,24 @@ export function createAdmin(options: AdminOptions): AdminHandler {
       // ── 以下都要先解锁 ──
       if (!unlocked(req)) {
         sendJson(res, 401, { error: '需要先解锁：请输入管理口令' });
+        return;
+      }
+
+      if (path === '/admin/token') {
+        const body = await readJson(req);
+        const token = str(body['token'], 64);
+        if (!ACCESS_TOKEN_PATTERN.test(token)) {
+          sendJson(res, 400, {
+            error: '口令要 8~64 位，只能用字母、数字和 . _ ~ - （它会放进网址里，特殊符号会被转义）',
+          });
+          return;
+        }
+        settings.setAccessToken(token);
+        logger.info('访问口令已更新（不记口令本身）');
+
+        // 这台设备上的旧 cookie 立刻就作废了。前端拿到 ok 之后会带着新口令
+        // 重新访问一次，顺理成章地换到新 cookie —— 所以这里不用发 cookie。
+        sendJson(res, 200, { ok: true, state: readState(req) });
         return;
       }
 

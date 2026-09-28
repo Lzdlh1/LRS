@@ -67,10 +67,12 @@ function main(): void {
   else logging.server.warn(llm.summary);
 
   // 只记「开没开」，绝不记口令本身
+  const tokenOf = (): string =>
+    settings.hasOwnAccessToken() ? settings.accessToken() : config.accessToken;
   logging.server.info(
-    config.accessToken === ''
+    tokenOf() === ''
       ? '访问口令未设置（任何人都能连，仅适合本地）'
-      : '访问口令已启用（地址后需带 ?token=…）',
+      : '访问口令已启用（地址后需带 ?token=…，或在门口那一页填一次）',
   );
   if (settings.adminHash() === null) {
     logging.server.warn('设置口令还没创建：第一次打开「设置」时会被要求设一个');
@@ -84,6 +86,7 @@ function main(): void {
       openai: config.llm.openaiApiKey,
       custom: config.llm.customApiKey,
     },
+    envAccessToken: config.accessToken,
     isLive: () => llm.live,
     onConfigChanged: () => {
       llm = loadLlm();
@@ -98,6 +101,7 @@ function main(): void {
     store,
     isAiLive: () => llm.live,
     admin,
+    accessTokenOf: tokenOf,
     // 正式玩法默认就是玩家视角；想看全场底牌用界面右上角的开关切到上帝视角
     defaultViewer: 1,
     hostFactory: ({ seatCount, names, onSpeechDelta, onDecision }) =>

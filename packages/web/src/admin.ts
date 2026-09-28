@@ -15,6 +15,12 @@ export interface KeyView {
 export interface AdminState {
   passphraseSet: boolean;
   unlocked: boolean;
+  /** 进站点的那道门；只给掩码 */
+  access: {
+    set: boolean;
+    source: 'ui' | 'env' | 'none';
+    masked: string;
+  };
   llm: {
     provider: Provider;
     cheapModel: string;
@@ -73,6 +79,15 @@ export const lock = (): Promise<unknown> => request('/admin/lock', { method: 'PO
 
 export const saveConfig = (payload: ConfigPayload): Promise<{ state: AdminState }> =>
   request('/admin/config', { method: 'POST', body: JSON.stringify(payload) });
+
+/**
+ * 改访问口令。
+ *
+ * 服务端改完之后**当前设备手里那个 cookie 就作废了**，所以调用方拿到 ok
+ * 之后要带着新口令重新访问一次（`/?token=…`），由那道门换发新 cookie。
+ */
+export const saveAccessToken = (token: string): Promise<{ state: AdminState }> =>
+  request('/admin/token', { method: 'POST', body: JSON.stringify({ token }) });
 
 export const revealKey = async (provider: Provider): Promise<string> => {
   const body = await request<{ key: string }>('/admin/reveal', {

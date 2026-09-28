@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import type { Logger } from '@lrs/shared';
 import { WebSocketServer, type WebSocket } from 'ws';
+import type { AdminHandler } from './admin.ts';
 import type { ServerConfig } from './config.ts';
 import type { ClientMessage, ServerMessage } from './session/protocol.ts';
 import { GameRoom, type AgentHostFactory } from './session/room.ts';
@@ -87,8 +88,10 @@ export interface StartServerOptions {
   store: GameStore | null;
   /** 传入就由 AI 接管非真人座位；不传就是纯手动模式 */
   hostFactory?: AgentHostFactory;
-  /** 模型是否已配置好（只用于健康检查展示） */
-  aiLive?: boolean;
+  /** 模型当前是否可用（设置界面能改，所以是个取值函数而不是快照） */
+  isAiLive?: () => boolean;
+  /** 设置界面的后台；不传就关掉 /admin 这一块 */
+  admin?: AdminHandler;
   /** 新连接的默认视角。默认上帝视角方便开发调试，M4 会改成玩家视角。 */
   defaultViewer?: 'god' | number;
 }
@@ -131,12 +134,15 @@ export function startServer(options: StartServerOptions): RunningServer {
       return;
     }
 
+    // 设置界面（自己带管理口令那一层锁）
+    if (options.admin?.handle(req, res, url)) return;
+
     if (url.pathname === '/health') {
       const body = JSON.stringify({
         ok: true,
         roomId: room.roomId,
         subscribers: room.subscriberCount,
-        ai: options.aiLive ?? false,
+        ai: options.isAiLive?.() ?? false,
         defaultViewer,
         web: serveWeb !== null,
         uptimeSeconds: Math.round(process.uptime()),

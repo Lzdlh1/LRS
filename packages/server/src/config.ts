@@ -11,6 +11,9 @@ export interface LlmConfig {
   deepseekBaseUrl: string;
   openaiApiKey: string;
   openaiBaseUrl: string;
+  /** 自定义（OpenAI 兼容）端点：供应商选 custom 时用 */
+  customApiKey: string;
+  customBaseUrl: string;
   cheap: LlmTierConfig;
   strong: LlmTierConfig;
   maxConcurrency: number;
@@ -66,6 +69,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
       deepseekBaseUrl: env['DEEPSEEK_BASE_URL'] ?? 'https://api.deepseek.com/v1',
       openaiApiKey: env['OPENAI_API_KEY'] ?? '',
       openaiBaseUrl: env['OPENAI_BASE_URL'] ?? 'https://api.openai.com/v1',
+      customApiKey: env['CUSTOM_API_KEY'] ?? '',
+      customBaseUrl: env['CUSTOM_BASE_URL'] ?? '',
       cheap: {
         provider: env['LLM_CHEAP_PROVIDER'] ?? 'deepseek',
         model: env['LLM_CHEAP_MODEL'] ?? 'deepseek-chat',
@@ -87,6 +92,7 @@ export function describeLlm(config: LlmConfig): Record<string, unknown> {
     strong: `${config.strong.provider}/${config.strong.model}`,
     deepseekKey: config.deepseekApiKey.length > 0 ? '已配置' : '未配置',
     openaiKey: config.openaiApiKey.length > 0 ? '已配置' : '未配置',
+    customKey: config.customApiKey.length > 0 ? '已配置' : '未配置',
     maxConcurrency: config.maxConcurrency,
     reflection: config.reflection,
   };

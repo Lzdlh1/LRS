@@ -1,11 +1,14 @@
 import { BUILTIN_PROFILES, createAgentHost } from '@lrs/agent-host';
+import type { LlmUsage } from '@lrs/llm-router';
+import { createAdmin } from './admin.ts';
 import { describeLlm, loadConfig } from './config.ts';
-import { createLlmRouter } from './llm.ts';
+import { createLlmRouter, resolveLlmConfig } from './llm.ts';
 import { createLogging } from './logging/index.ts';
 import { startServer } from './server.ts';
 import type { GameRoom } from './session/room.ts';
 import { openDatabase } from './store/db.ts';
 import { GameStore } from './store/gameStore.ts';
+import { SettingsStore } from './store/settingsStore.ts';
 
 function main(): void {
   const config = loadConfig();
@@ -20,28 +23,16 @@ function main(): void {
     webDir: config.webDir,
   });
 
-  // 模型配置只记「用哪个模型、有没有配 Key」，绝不记 Key 本身
-  logging.server.info('模型配置', describeLlm(config.llm));
-
-  if (logging.startup.removedDays.length > 0) {
-    logging.server.info('已清理过期日志', { removedDays: logging.startup.removedDays });
-  }
-  for (const warning of logging.startup.warnings) {
-    logging.server.warn('日志自检发现疑似凭据', { detail: warning });
-  }
-  if (!config.logPrompts) {
-    logging.server.info('prompt 全文不落盘（需要时用 LOG_PROMPTS=true 临时开启）');
-  }
-
   const db = openDatabase(config.dbPath);
   const store = new GameStore(db);
+  const settings = new SettingsStore(db);
   const profileCount = store.seedBuiltinProfiles(BUILTIN_PROFILES);
   logging.server.info('内置人设已就绪', { count: profileCount });
 
   // 用量落库需要拿到「当前是哪一局」，房间在启动之后才存在，所以用可变引用
   let currentRoom: GameRoom | null = null;
 
-  const llm = createLlmRouter(config.llm, logging.llm, (usage) => {
+  const onUsage = (usage: LlmUsage): void => {
     try {
       store.recordUsage({
         gameId: currentRoom?.gameId ?? null,
@@ -57,8 +48,21 @@ function main(): void {
     } catch (error) {
       logging.llm.error('用量落库失败', { error: String(error) });
     }
-  });
+  };
 
+  /**
+   * 装配模型路由。
+   *
+   * 设置界面改完之后会再调一次 —— 新装配的 router 会在**下一局**生效，
+   * 正在跑的那一局仍然用旧的（它在内存里已经持有旧 router 了）。
+   */
+  const loadLlm = () =>
+    createLlmRouter(resolveLlmConfig(config.llm, settings), logging.llm, onUsage);
+
+  let llm = loadLlm();
+
+  // 模型配置只记「用哪个模型、有没有配 Key」，绝不记 Key 本身
+  logging.server.info('模型配置', describeLlm(resolveLlmConfig(config.llm, settings)));
   if (llm.live) logging.server.info(llm.summary);
   else logging.server.warn(llm.summary);
 
@@ -68,13 +72,32 @@ function main(): void {
       ? '访问口令未设置（任何人都能连，仅适合本地）'
       : '访问口令已启用（地址后需带 ?token=…）',
   );
+  if (settings.adminHash() === null) {
+    logging.server.warn('设置口令还没创建：第一次打开「设置」时会被要求设一个');
+  }
+
+  const admin = createAdmin({
+    settings,
+    logger: logging.server,
+    envKeys: {
+      deepseek: config.llm.deepseekApiKey,
+      openai: config.llm.openaiApiKey,
+      custom: config.llm.customApiKey,
+    },
+    isLive: () => llm.live,
+    onConfigChanged: () => {
+      llm = loadLlm();
+      logging.server.info('模型设置已重载', describeLlm(resolveLlmConfig(config.llm, settings)));
+    },
+  });
 
   const running = startServer({
     config,
     logger: logging.server,
     wsLogger: logging.ws,
     store,
-    aiLive: llm.live,
+    isAiLive: () => llm.live,
+    admin,
     // 正式玩法默认就是玩家视角；想看全场底牌用界面右上角的开关切到上帝视角
     defaultViewer: 1,
     hostFactory: ({ seatCount, names, onSpeechDelta, onDecision }) =>

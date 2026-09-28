@@ -1,6 +1,7 @@
 import { LlmRouter, OpenAiCompatibleProvider, type LlmProvider, type LlmUsage } from '@lrs/llm-router';
 import type { Logger } from '@lrs/shared';
 import type { LlmConfig } from './config.ts';
+import type { Provider, SettingsStore } from './store/settingsStore.ts';
 
 export interface LlmBundle {
   router: LlmRouter;
@@ -11,9 +12,31 @@ export interface LlmBundle {
 }
 
 /**
+ * 把「.env 的默认值」和「界面里改过的设置」合成一份真正生效的配置。
+ *
+ * 优先级：**界面 > .env**。界面里配过（含清空）就以界面为准 ——
+ * 否则清掉 Key 之后 `.env` 里的那个又会悄悄顶上来。
+ */
+export function resolveLlmConfig(env: LlmConfig, settings: SettingsStore): LlmConfig {
+  const stored = settings.readLlm();
+  const keyFor = (provider: Provider, fallback: string): string =>
+    settings.hasOwnApiKey(provider) ? settings.apiKey(provider) : fallback;
+
+  return {
+    ...env,
+    deepseekApiKey: keyFor('deepseek', env.deepseekApiKey),
+    openaiApiKey: keyFor('openai', env.openaiApiKey),
+    customApiKey: keyFor('custom', env.customApiKey),
+    customBaseUrl: stored.baseUrl !== '' ? stored.baseUrl : env.customBaseUrl,
+    cheap: { provider: stored.provider, model: stored.cheapModel },
+    strong: { provider: stored.provider, model: stored.strongModel },
+  };
+}
+
+/**
  * 组装模型路由。
  *
- * 这里只放「有哪些 provider」，不放任何 Key —— Key 从环境变量来，
+ * 这里只放「有哪些 provider」，不放任何 Key —— Key 从环境变量或设置表来，
  * 并且永远不写进日志（日志里只有「已配置 / 未配置」）。
  */
 export function createLlmRouter(
@@ -33,6 +56,15 @@ export function createLlmRouter(
       baseUrl: config.openaiBaseUrl,
     }),
   };
+
+  // 自定义端点：填了地址才注册。没填却选了它，会得到「未注册」而不是发出一个坏请求
+  if (config.customBaseUrl !== '') {
+    providers['custom'] = new OpenAiCompatibleProvider({
+      name: 'custom',
+      apiKey: config.customApiKey,
+      baseUrl: config.customBaseUrl,
+    });
+  }
 
   const router = new LlmRouter({
     providers,

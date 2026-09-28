@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import type { Action } from '@lrs/shared';
-import { computed, onMounted } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import ActionPanel from './components/ActionPanel.vue';
 import EventLog from './components/EventLog.vue';
 import ReplayPanel from './components/ReplayPanel.vue';
 import RoundTable from './components/RoundTable.vue';
+import SettingsPanel from './components/SettingsPanel.vue';
 import UsagePanel from './components/UsagePanel.vue';
 import { formatEvent, type EventLine } from './format';
 import { PHASE_LABELS } from './labels';
@@ -32,6 +33,9 @@ const {
 onMounted(connect);
 
 const lines = computed<EventLine[]>(() => events.value.map(formatEvent));
+
+/** 设置面板自己管取数，这里只负责开关 */
+const settingsOpen = ref(false);
 
 const latestSpeech = computed(() => {
   for (let i = events.value.length - 1; i >= 0; i -= 1) {
@@ -123,6 +127,7 @@ function abort(): void {
       </button>
       <button class="ghost" :disabled="!connected" @click="openReplay()">复盘</button>
       <button class="ghost" :disabled="!connected" @click="openUsage('game')">用量</button>
+      <button class="ghost" @click="settingsOpen = true">设置</button>
       <button class="ghost" @click="newGame">新开一局</button>
     </header>
 
@@ -142,6 +147,7 @@ function abort(): void {
 
     <ReplayPanel v-if="replay" :payload="replay" @day="openReplay" @close="closeReplay" />
     <UsagePanel v-if="usage" :payload="usage" @scope="openUsage" @close="closeUsage" />
+    <SettingsPanel v-if="settingsOpen" @close="settingsOpen = false" />
   </div>
 </template>
 

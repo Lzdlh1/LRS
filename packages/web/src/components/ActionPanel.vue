@@ -21,8 +21,10 @@ const canSpeak = computed(() => needsSpeech(pending.value));
 const stopped = computed(() => props.state?.stopped === true);
 const paused = computed(() => props.state?.paused === true);
 const isOver = computed(() => props.state?.winner != null || stopped.value);
+/** 服务端正停着等真人把重大信息卡片点掉 */
+const waitingAck = computed(() => (props.state?.ackSeq.length ?? 0) > 0);
 /** 冻结中：这时候点什么都会被服务端拒绝，干脆不给点 */
-const frozen = computed(() => paused.value || stopped.value);
+const frozen = computed(() => paused.value || stopped.value || waitingAck.value);
 /** 玩家视角下，如果不是轮到自己，选项会是空的 */
 const observing = computed(() => pending.value !== null && pending.value.options.length === 0);
 const mine = computed(() => pending.value !== null && pending.value.options.length > 0);
@@ -54,6 +56,10 @@ function submitSpeech(): void {
       <template v-if="stopped">
         <span class="tag danger">本局已中止</span>
         <span class="dim">在 ☰ 里点「新开一局」重来</span>
+      </template>
+      <template v-else-if="waitingAck">
+        <span class="tag warn">等你确认</span>
+        <span class="dim">看完卡片点「知道了」才继续推进</span>
       </template>
       <template v-else-if="isOver">
         <span class="tag success">{{ state?.winner === 'wolf' ? '狼人胜' : '好人胜' }}</span>

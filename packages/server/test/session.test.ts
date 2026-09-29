@@ -1,6 +1,6 @@
 import type { AgentHost } from '@lrs/agent-host';
 import { choicesFor, type PendingRequest, type Viewer } from '@lrs/core-engine';
-import { createLogger, nullSink, type Action, type SeatId } from '@lrs/shared';
+import { createLogger, nullSink, type Action, type GameEvent, type SeatId } from '@lrs/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ClientState, ReplayPayload, ServerMessage, UsageReport } from '../src/session/protocol.ts';
 import { GameRoom, type AgentHostFactory } from '../src/session/room.ts';
@@ -161,6 +161,11 @@ describe('信息裁剪', () => {
 
     // 推到白天投票：夜间「轮到谁」是保密的，由另一个测试覆盖
     for (let i = 0; i < 200; i += 1) {
+      // 重大信息要真人确认，这一步不能省（否则房间会停在那里）
+      if (god.state().ackSeq.length > 0) {
+        room.handleMessage('god', { type: 'resume' });
+        continue;
+      }
       const current = god.state().pending;
       if (!current || god.state().winner !== null) break;
       if (current.options[0]?.kind === 'vote') break;
@@ -614,6 +619,90 @@ describe('暂停与中止', () => {
   });
 });
 
+describe('重大信息等真人确认', () => {
+  /** 把所有收到的状态消息里的事件摊平 */
+  function eventsOf(target: Collector): GameEvent[] {
+    return target.messages.flatMap((message) =>
+      message.type === 'snapshot' || message.type === 'update' ? message.events : [],
+    );
+  }
+
+  /**
+   * 一路代打到「被拦住」为止。
+   * 位次随机，所以第一件大事可能是查验、女巫夜况，也可能是天亮死讯 —— 不写死。
+   */
+  function driveUntilAck(room: GameRoom, god: Collector): void {
+    for (let i = 0; i < 800; i += 1) {
+      const state = god.state();
+      if (state.ackSeq.length > 0 || state.winner !== null) return;
+      room.autoPlay(1);
+    }
+  }
+
+  it('查验/死讯这类信息一出来就停手，点「继续」才接着走', () => {
+    vi.useFakeTimers();
+    const { room } = makeRoom(2024);
+    const god = collector();
+    god.subscribe(room, 'god', 'god');
+
+    driveUntilAck(room, god);
+    const held = god.state().ackSeq;
+    expect(held.length, '一路代打下来应该碰到过重大信息').toBeGreaterThan(0);
+    const seqAtHold = god.state().lastSeq;
+
+    // 拦住期间：十分钟过去局面一动不动（不排兜底）
+    vi.advanceTimersByTime(10 * 60 * 1000);
+    expect(god.state().lastSeq).toBe(seqAtHold);
+
+    // 硬塞一手也不接受
+    const pending = god.state().pending;
+    if (pending) room.submit(driveAction(pending)!, 'client');
+    expect(god.state().lastSeq).toBe(seqAtHold);
+
+    // 点「继续」之后才放行
+    room.handleMessage('god', { type: 'resume' });
+    expect(god.state().ackSeq).toEqual([]);
+    room.autoPlay(1);
+    expect(god.state().lastSeq).toBeGreaterThan(seqAtHold);
+  });
+
+  it('被拦住的只会是「真人本人收得到」的事件', () => {
+    const { room } = makeRoom(31337);
+    const god = collector();
+    god.subscribe(room, 'god', 'god');
+
+    driveUntilAck(room, god);
+    const heldSeqs = new Set(god.state().ackSeq);
+    const held = eventsOf(god).filter((event) => heldSeqs.has(event.seq));
+
+    expect(held.length).toBeGreaterThan(0);
+    for (const event of held) {
+      expect(['seer_result', 'witch_night_info', 'died', 'hunter_shot']).toContain(event.payload.t);
+      // 查验与女巫夜况是私密事件：只有本人（真人）收到时才会拦
+      if (event.payload.t === 'seer_result' || event.payload.t === 'witch_night_info') {
+        expect((event.payload as { seat: SeatId }).seat).toBe(room.humanSeatId);
+      }
+    }
+  });
+
+  it('对局结束后不再拦人', () => {
+    const { room } = makeRoom(777);
+    const god = collector();
+    god.subscribe(room, 'god', 'god');
+
+    for (let i = 0; i < 3000 && god.state().winner === null; i += 1) {
+      if (god.state().ackSeq.length > 0) {
+        room.handleMessage('god', { type: 'resume' });
+        continue;
+      }
+      room.autoPlay(1);
+    }
+
+    expect(god.state().winner).not.toBeNull();
+    expect(god.state().ackSeq, '结束那屏本来就摆着底牌，不用再等确认').toEqual([]);
+  });
+});
+
 /** 只记录调用时序的假 AI；真实 AI 的接线由 ai.test.ts 覆盖 */
 function timingHost(options: { delayMs: number }) {
   const calls: { seat: SeatId; kind: string; at: number }[] = [];
@@ -670,6 +759,11 @@ describe('并行预思考', () => {
 
     // 先把首夜走完，一直走到「轮到真人上警」为止（位次随机，所以要看座位号）
     for (let i = 0; i < 80; i += 1) {
+      // 夜里验到自己头上的重大信息要真人确认，这一步不能省
+      if (god.state().ackSeq.length > 0) {
+        room.handleMessage('god', { type: 'resume' });
+        continue;
+      }
       const pending = god.state().pending;
       if (!pending) break;
       if (pending.options[0]?.kind === 'chief_signup' && pending.seat === room.humanSeatId) break;
@@ -707,6 +801,10 @@ describe('并行预思考', () => {
 
     // 走到第一次「AI 发言」
     for (let i = 0; i < 200; i += 1) {
+      if (god.state().ackSeq.length > 0) {
+        room.handleMessage('god', { type: 'resume' });
+        continue;
+      }
       const pending = god.state().pending;
       if (!pending || god.state().winner !== null) break;
       if (pending.options[0]?.kind === 'speak' && pending.seat !== room.humanSeatId) break;

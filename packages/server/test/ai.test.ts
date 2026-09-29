@@ -148,7 +148,15 @@ async function playWithAi(
     latest = message.state;
     events.push(...message.events);
 
-    if (latest.winner !== null || latest.pending?.seat !== latest.humanSeat) return;
+    if (latest.winner !== null) return;
+
+    // 查验/死讯这类重大信息要等真人点确认才往下走；测试里的「真人」自动点掉
+    if (latest.ackSeq.length > 0) {
+      socket.send(JSON.stringify({ type: 'resume' }));
+      return;
+    }
+
+    if (latest.pending?.seat !== latest.humanSeat) return;
 
     const pending = latest.pending;
     const choice = choicesFor(pending)[0];

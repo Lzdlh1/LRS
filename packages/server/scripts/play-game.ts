@@ -15,7 +15,6 @@ import type { ClientState, ClientMessage, ServerMessage } from '../src/session/p
 
 const WS_URL = process.env['WS_URL'] ?? 'ws://127.0.0.1:8787/ws';
 const DB_PATH = process.env['DB_PATH'] ?? 'data/lrs.db';
-const HUMAN_SEAT = Number(process.env['HUMAN_SEAT'] ?? 1);
 const TIMEOUT_MS = Number(process.env['GAME_TIMEOUT_MS'] ?? 7 * 60 * 1000);
 const USAGE_ONLY = process.argv.includes('--usage');
 
@@ -94,7 +93,16 @@ async function playGame(): Promise<void> {
     }
 
     const state = reader();
-    if (!state || state.winner !== null || state.pending?.seat !== HUMAN_SEAT) return;
+    if (!state || state.winner !== null) return;
+
+    // 查验/死讯这类重大信息要真人点确认；无头脚本自动点掉，不然会卡在那里
+    if (state.ackSeq.length > 0) {
+      socket.send(JSON.stringify({ type: 'resume' } satisfies ClientMessage));
+      return;
+    }
+
+    // 真人位次每局随机，所以看服务端下发的座位，不写死
+    if (state.pending?.seat !== state.humanSeat) return;
 
     const pending = state.pending;
     const choice = choicesFor(pending)[0];
@@ -111,7 +119,7 @@ async function playGame(): Promise<void> {
     socket.addEventListener('error', () => reject(new Error(`连不上 ${WS_URL}，服务端起了吗？`)));
   });
 
-  console.log(`[开始] 新开一局；真人固定坐 ${HUMAN_SEAT} 号，其余交给 AI`);
+  console.log('[开始] 新开一局；真人位次由服务端随机，其余交给 AI');
   const startedAt = Date.now();
   socket.send(JSON.stringify({ type: 'newGame' } satisfies ClientMessage));
 

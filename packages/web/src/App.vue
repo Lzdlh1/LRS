@@ -4,12 +4,13 @@ import { ROLE_LABELS, type Action, type Phase } from '@lrs/shared';
 import { computed, onMounted, ref, watch } from 'vue';
 import ActionPanel from './components/ActionPanel.vue';
 import EventLog from './components/EventLog.vue';
+import InfoCard from './components/InfoCard.vue';
 import ReplayPanel from './components/ReplayPanel.vue';
 import SeatColumn from './components/SeatColumn.vue';
 import SettingsPanel from './components/SettingsPanel.vue';
 import StageOverlay from './components/StageOverlay.vue';
 import UsagePanel from './components/UsagePanel.vue';
-import { formatEvent, type EventLine } from './format';
+import { formatEvent, buildAckCard, type EventLine } from './format';
 import { isNightPhase, PHASE_LABELS } from './labels';
 import { deriveMarks } from './marks';
 import { useGameSocket } from './ws';
@@ -35,7 +36,36 @@ const {
 
 onMounted(connect);
 
-const lines = computed<EventLine[]>(() => events.value.map(formatEvent));
+const lines = computed<EventLine[]>(() => {
+  const out: EventLine[] = [];
+  let nightShown = false;
+
+  for (const event of events.value) {
+    const payload = event.payload;
+
+    // 夜里走到哪一步是致命信息：引擎会在该角色出局后**整段跳过**那一步，
+    // 所以「现在是女巫行动」等于告诉你女巫还活着。玩家视角只留一条「夜晚」当分隔，
+    // 细节只在上帝视角出现。
+    if (payload.t === 'phase_changed' && isNightPhase(payload.to)) {
+      if (godView.value) {
+        out.push(formatEvent(event));
+      } else if (!nightShown) {
+        nightShown = true;
+        out.push({
+          key: `${event.seq}`,
+          day: event.day,
+          tone: 'muted',
+          text: `—— 第 ${event.day} 天 · 夜晚 ——`,
+        });
+      }
+      continue;
+    }
+    if (payload.t === 'phase_changed') nightShown = false;
+    out.push(formatEvent(event));
+  }
+
+  return out;
+});
 
 /** 设置面板自己管取数，这里只负责开关 */
 const settingsOpen = ref(false);
@@ -72,6 +102,15 @@ const teammatesKnown = computed(() => {
 
 /** 已按视角裁剪过的事件 → 头像上的身份标记 */
 const marks = computed(() => deriveMarks(events.value, { teammatesKnown: teammatesKnown.value }));
+
+/** 服务端停下来等人确认的重大信息 → 一张卡片 */
+const ackCard = computed(() => {
+  const current = state.value;
+  if (!current || current.ackSeq.length === 0) return null;
+  const wanted = new Set(current.ackSeq);
+  // 事件被裁掉（很久以前的老局）时给一张兜底卡，免得卡在「等确认」里出不来
+  return buildAckCard(events.value.filter((event) => wanted.has(event.seq)));
+});
 
 /** 当前这手能点谁：座位 → 可提交的动作（女巫的解药/毒药可能落在同一个人身上） */
 const targetMap = computed<Record<number, ActionChoice[]>>(() => {
@@ -365,6 +404,9 @@ function abort(): void {
         <button class="ghost" @click="pickMenu = null">取消</button>
       </div>
     </div>
+
+    <!-- 重大信息卡片：服务端停着等这一下，点了才会继续推进 -->
+    <InfoCard v-if="ackCard" :card="ackCard" @confirm="resume()" />
 
     <ReplayPanel v-if="replay" :payload="replay" @day="openReplay" @close="closeReplay" />
     <UsagePanel v-if="usage" :payload="usage" @scope="openUsage" @close="closeUsage" />

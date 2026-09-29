@@ -65,6 +65,14 @@ export interface ClientState {
   paused: boolean;
   /** 本局被中止：终态，只能新开一局 */
   stopped: boolean;
+  /**
+   * 需要真人点一下「知道了」才算看完的事件序号。
+   *
+   * 查验结果、死讯这类信息一出来局面就往前走了（预言家验人是夜里最后一步，
+   * 紧接着就是天亮），玩家根本来不及看。非空时房间**停手**：不排超时、不发起
+   * 任何模型调用，等人确认完再继续。
+   */
+  ackSeq: number[];
   winner: Camp | null;
   lastSeq: number;
 }
@@ -168,6 +176,8 @@ export interface ProjectArgs {
   deadlineAt: number;
   paused: boolean;
   stopped: boolean;
+  /** 正等着真人确认的事件序号，见 ClientState.ackSeq */
+  ackSeq: number[];
 }
 
 /**
@@ -185,6 +195,7 @@ export function projectState({
   deadlineAt,
   paused,
   stopped,
+  ackSeq,
 }: ProjectArgs): ClientState {
   const isGod = viewer === 'god';
   const viewerSeat = typeof viewer === 'number' ? viewer : null;
@@ -241,6 +252,7 @@ export function projectState({
     masked,
     paused,
     stopped,
+    ackSeq: [...ackSeq],
     winner: state.winner,
     lastSeq: state.seq,
   };

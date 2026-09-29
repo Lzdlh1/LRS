@@ -131,6 +131,13 @@ export function useGameSocket() {
       for (const event of message.events) {
         if (event.payload.t === 'spoke') clearStream(event.payload.seat);
       }
+
+      // 每开一局真人位次都会重抽：视角钉在「我的座位」上时要跟着挪过去，
+      // 否则会突然看到别人的牌。切到上帝视角时不跟 —— 那是刻意选的。
+      const current = state.value;
+      if (current.viewer !== 'god' && current.viewer !== current.humanSeat) {
+        send({ type: 'setViewer', viewer: current.humanSeat });
+      }
     };
   }
 

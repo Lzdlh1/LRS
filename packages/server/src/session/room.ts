@@ -67,6 +67,19 @@ function mulberry32(seed: number): () => number {
 }
 
 /**
+ * 会让局面「跳」过去的重大信息：一出来就得停下来让人看清。
+ *
+ * 预言家验人是夜里最后一步，紧接着就是天亮 —— 不拦的话「查人」和「天亮了」
+ * 是前后脚发生的，玩家根本来不及看结果。死讯、女巫夜况、猎人开枪同理。
+ */
+const ACK_KINDS: ReadonlySet<string> = new Set([
+  'seer_result',
+  'witch_night_info',
+  'died',
+  'hunter_shot',
+]);
+
+/**
  * 一个房间 = 一局对局 + 一组订阅者。
  *
  * 职责：驱动引擎、按视角裁剪事件与状态、广播、超时兜底、落库。
@@ -111,6 +124,8 @@ export class GameRoom {
    * 狼人（AI）据此就能反推出身份分布。视角、待办判断都要读它，不能写死 1。
    */
   private humanSeat: SeatId = 1;
+  /** 正等着真人确认的重大事件；非空时房间一律不往下推（见 ACK_KINDS） */
+  private ackSeq: number[] = [];
 
   constructor(options: GameRoomOptions) {
     this.roomId = options.id ?? randomUUID();
@@ -191,7 +206,7 @@ export class GameRoom {
         this.setPaused(true);
         return;
       case 'resume':
-        this.setPaused(false);
+        this.resumeFlow();
         return;
       case 'stop':
         this.stopGame();
@@ -206,13 +221,14 @@ export class GameRoom {
   // ── 推进 ──
 
   submit(action: Action, origin = 'debug'): void {
-    if (this.paused || this.stopped) {
-      this.logger.warn('对局处于暂停/中止状态，忽略这次推进', {
+    if (this.paused || this.stopped || this.ackSeq.length > 0) {
+      this.logger.warn('对局处于暂停/中止/等确认状态，忽略这次推进', {
         origin,
         kind: action.kind,
         actor: action.actor,
         paused: this.paused,
         stopped: this.stopped,
+        waitingAck: this.ackSeq.length,
       });
       return;
     }
@@ -231,13 +247,70 @@ export class GameRoom {
 
     this.record(result.events);
     this.checkFinished();
+
+    // 重大信息：先停在这里，等真人点一下「知道了」。checkFinished 可能刚排过计时器，得清掉
+    const holding = this.awaitAck(result.events);
+    if (holding) {
+      this.clearTimer();
+      this.deadlineAt = 0;
+      this.aiToken = '';
+    }
+
     this.broadcast(result.events);
+    if (holding) return;
     this.scheduleAi();
+  }
+
+  /**
+   * 遇到重大信息就拦一手，返回是否拦住了。
+   *
+   * 为什么必须拦在**服务端**：让客户端弹完卡片再补一句「暂停」是来不及的 ——
+   * 那时房间已经把下一阶段的并行预思考发出去了（上警一次 8 个模型调用），
+   * 暂停指令一到，这些结果全被判为「已不适用」丢掉，钱白花。
+   */
+  private awaitAck(events: readonly GameEvent[]): boolean {
+    // 对局已经结束就别拦了：结局那屏本来就摆着底牌
+    if (this.state.winner !== null) return false;
+
+    const significant = eventsFor(events, this.humanSeat).filter((event) =>
+      ACK_KINDS.has(event.payload.t),
+    );
+    if (significant.length === 0) return false;
+
+    this.ackSeq = significant.map((event) => event.seq);
+    this.logger.info('重大信息，等真人确认后再推进', {
+      gameId: this.currentGameId,
+      seqs: this.ackSeq,
+      kinds: significant.map((event) => event.payload.t),
+    });
+    return true;
+  }
+
+  /** 「继续」：既解开真人自己按的暂停，也放行被重大信息拦住的那一步 */
+  private resumeFlow(): void {
+    const wasHolding = this.ackSeq.length > 0;
+    const wasPaused = this.paused;
+
+    if (wasHolding) {
+      this.logger.info('真人已确认，继续推进', { gameId: this.currentGameId, seqs: this.ackSeq });
+      this.ackSeq = [];
+      this.broadcastState();
+    }
+
+    this.setPaused(false);
+
+    // setPaused(false) 在「本来就没暂停」时会直接返回，所以放行之后得自己把推进接上
+    if (wasHolding && !wasPaused) {
+      this.armTimer();
+      this.scheduleAi();
+    }
   }
 
   /** 调试面板用：连续代打若干步 */
   autoPlay(count = 1): void {
     for (let i = 0; i < count; i += 1) {
+      // 代打是调试用的快进：被重大信息拦住时直接跳过，不然「代打 30 步」要点 30 次
+      this.ackSeq = [];
       const pending = pendingRequest(this.state);
       if (!pending || this.state.winner !== null) return;
       this.submit(randomActionFor(pending), 'auto');
@@ -275,6 +348,7 @@ export class GameRoom {
     if (this.stopped) return;
     this.stopped = true;
     this.paused = false;
+    this.ackSeq = [];
     this.clearTimer();
     this.deadlineAt = 0;
 
@@ -289,14 +363,12 @@ export class GameRoom {
   newGame(seed?: number): void {
     this.clearTimer();
     this.currentGameId = randomUUID();
-    const previousSeat = this.humanSeat;
     this.state = this.startNewGame(seed);
     this.armTimer();
-    for (const subscriber of this.subscribers.values()) {
-      // 位次每局重抽，真人视角要跟着挪到新座位，否则会莫名其妙看到别人的牌
-      if (subscriber.viewer === previousSeat) subscriber.viewer = this.humanSeat;
-      this.sendSnapshot(subscriber, 0);
-    }
+    // 位次重抽之后视角怎么跟，交给客户端自己重发 setViewer：
+    // 服务端没法从「viewer 恰好等于上一局的真人座位」推断出谁才是真人，
+    // 那会把明确指定了视角的客户端（比如信息边界审计）也一起搬走。
+    for (const subscriber of this.subscribers.values()) this.sendSnapshot(subscriber, 0);
     this.scheduleAi();
   }
 
@@ -311,6 +383,7 @@ export class GameRoom {
     this.finished = false;
     this.paused = false;
     this.stopped = false;
+    this.ackSeq = [];
     this.history = [];
     this.aiToken = '';
     this.prefetch.clear();
@@ -416,8 +489,8 @@ export class GameRoom {
       return;
     }
 
-    // 暂停/中止期间一律不排兜底计时器：兜底会往前推局面，往前推就要花钱
-    if (this.paused || this.stopped) {
+    // 暂停/中止/等确认期间一律不排兜底计时器：兜底会往前推局面，往前推就要花钱
+    if (this.paused || this.stopped || this.ackSeq.length > 0) {
       this.deadlineAt = 0;
       return;
     }
@@ -466,8 +539,8 @@ export class GameRoom {
     const host = this.host;
     if (!host) return;
 
-    // 暂停/中止期间连想都不去想
-    if (this.paused || this.stopped) {
+    // 暂停/中止/等确认期间连想都不去想
+    if (this.paused || this.stopped || this.ackSeq.length > 0) {
       this.aiToken = '';
       return;
     }
@@ -657,6 +730,7 @@ export class GameRoom {
       deadlineAt: this.deadlineAt,
       paused: this.paused,
       stopped: this.stopped,
+      ackSeq: this.ackSeq,
     });
   }
 

@@ -12,6 +12,82 @@ export interface EventLine {
   speech?: boolean;
 }
 
+/**
+ * 一张「重大信息」卡片：查验、死讯、技能这类一出来局面就跳过去的信息。
+ *
+ * 目前卡片上是一枚阵营徽记（`kind` 决定画什么），不是立绘 ——
+ * 本机的图片生成接口只返回占位图（302 到一张固定的 default.jpeg），
+ * 真图到位之后把徽记换成 `<img>` 即可，数据这一层不用动。
+ */
+export interface AckCard {
+  kind: 'seer' | 'witch' | 'death' | 'shot' | 'other';
+  title: string;
+  tone: 'wolf' | 'good' | 'neutral';
+  lines: string[];
+}
+
+/** 把一批需要确认的事件摊成一张卡片：标题取第一件，正文列全 */
+export function buildAckCard(events: readonly GameEvent[]): AckCard {
+  const lines: string[] = [];
+  let primary: Omit<AckCard, 'lines'> | null = null;
+
+  for (const event of events) {
+    const payload = event.payload;
+    let spec: Omit<AckCard, 'lines'> | null = null;
+    let line = '';
+
+    switch (payload.t) {
+      case 'seer_result': {
+        const isWolf = payload.camp === 'wolf';
+        spec = {
+          kind: 'seer',
+          title: '查验结果',
+          tone: isWolf ? 'wolf' : 'good',
+        };
+        line = `${seatLabel(payload.target)}是${isWolf ? '狼人' : '好人'}`;
+        break;
+      }
+
+      case 'witch_night_info': {
+        spec = {
+          kind: 'witch',
+          title: payload.killed === null ? '今夜平安' : '今夜的消息',
+          tone: 'neutral',
+        };
+        line = payload.killed === null ? '今晚没有人被刀' : `${seatLabel(payload.killed)}被刀了`;
+        break;
+      }
+
+      case 'died': {
+        spec = { kind: 'death', title: '天亮了 · 死讯', tone: 'neutral' };
+        line = `${seatLabel(payload.seat)}出局（${DEATH_CAUSE_LABELS[payload.cause]}）`;
+        break;
+      }
+
+      case 'hunter_shot': {
+        spec = {
+          kind: 'shot',
+          title: '猎人开枪',
+          tone: payload.target === null ? 'neutral' : 'wolf',
+        };
+        line =
+          payload.target === null
+            ? `${seatLabel(payload.seat)}放弃开枪`
+            : `${seatLabel(payload.seat)}开枪带走 ${seatLabel(payload.target)}`;
+        break;
+      }
+    }
+
+    if (spec !== null) {
+      if (primary === null) primary = spec;
+      lines.push(line);
+    }
+  }
+
+  const head: Omit<AckCard, 'lines'> = primary ?? { kind: 'other', title: '有新消息', tone: 'neutral' };
+  return { ...head, lines };
+}
+
 /** 把引擎事件翻译成一句人话。这是纯展示层，不做任何推断。 */
 export function formatEvent(event: GameEvent): EventLine {
   const key = `${event.seq}`;

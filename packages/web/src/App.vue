@@ -62,12 +62,12 @@ const phaseLabel = computed(() => {
 const pendingSeat = computed(() => state.value?.pending?.seat ?? null);
 const speakingSeat = computed(() => streaming.value?.seat ?? null);
 
-/** 狼队友是不是已经「碰过面」：首夜的守卫/狼人阶段之前，狼也还不知道队友是谁 */
+/** 狼队友是不是已经「碰过面」：狼人睁眼那一刻就算认识了，之前（准备 / 守卫）还不知道 */
 const teammatesKnown = computed(() => {
   const current = state.value;
   if (!current) return false;
   if (current.day > 1) return true;
-  return current.phase !== 'SETUP' && current.phase !== 'NIGHT_GUARD' && current.phase !== 'NIGHT_WOLF';
+  return current.phase !== 'SETUP' && current.phase !== 'NIGHT_GUARD';
 });
 
 /** 已按视角裁剪过的事件 → 头像上的身份标记 */

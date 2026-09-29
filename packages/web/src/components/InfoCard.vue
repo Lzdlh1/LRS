@@ -7,18 +7,21 @@ import type { AckCard } from '../format';
  *
  * 查验结果、死讯这类信息一出来局面就往前跳（预言家验人是夜里最后一步，
  * 紧接着就是天亮），所以服务端会停在那里等这张卡被点掉 —— 不是纯装饰。
+ *
+ * 样式走「木刻平涂」：米纸底 + 墨蓝粗框 + 内细线，中间一块墨蓝印版放徽记；
+ * 查验结果直接用现成的朱砂/青玉印章。四个颜色，不铺大面积亮色。
  */
 const props = defineProps<{ card: AckCard }>();
 const emit = defineEmits<{ confirm: [] }>();
 
-/** 徽记：代替立绘的位置，等真图到位再换 */
-const emblem = computed(() => {
+/** 印版上的图：查验用印章（查杀 / 金水），其余用对应角色的徽记 */
+const emblemSrc = computed(() => {
   const { kind, tone } = props.card;
-  if (kind === 'seer') return tone === 'wolf' ? '🐺' : '🛡';
-  if (kind === 'witch') return '🧪';
-  if (kind === 'death') return '🕯';
-  if (kind === 'shot') return '🔫';
-  return '🃏';
+  if (kind === 'seer') return tone === 'wolf' ? '/art/stamps/wolf.svg' : '/art/stamps/good.svg';
+  if (kind === 'witch') return '/art/sigils/witch.svg';
+  if (kind === 'shot') return '/art/sigils/hunter.svg';
+  if (kind === 'death') return '/art/sigils/villager.svg';
+  return '/art/sigils/villager.svg';
 });
 </script>
 
@@ -26,7 +29,7 @@ const emblem = computed(() => {
   <div class="mask">
     <div class="card" :class="card.tone">
       <div class="art">
-        <span class="emblem">{{ emblem }}</span>
+        <img class="emblem" :src="emblemSrc" :alt="card.title">
       </div>
 
       <div class="title">{{ card.title }}</div>
@@ -59,19 +62,30 @@ const emblem = computed(() => {
   }
 }
 
+/* 米纸卡：粗墨框 + 收进去一圈细线 */
 .card {
+  position: relative;
   width: min(300px, 84vw);
   max-height: 88dvh;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  padding: 14px 14px 16px;
-  border-radius: 14px;
-  background: linear-gradient(180deg, #1b2130 0%, #0c1018 100%);
-  border: 1px solid var(--line-2);
+  padding: 15px 15px 17px;
+  border-radius: 5px;
+  background: #efe6d2;
+  border: 3px solid #16263f;
   box-shadow: 0 22px 60px rgba(0, 0, 0, 0.7);
   animation: card-in 0.34s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+.card::before {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border: 1px solid rgba(22, 38, 63, 0.32);
+  border-radius: 2px;
+  pointer-events: none;
 }
 
 @keyframes card-in {
@@ -81,22 +95,23 @@ const emblem = computed(() => {
   }
 }
 
+/* 印版：一块墨蓝，徽记/印章压在上面 */
 .art {
   width: 100%;
-  aspect-ratio: 3 / 4;
-  max-height: 42dvh;
-  border-radius: 10px;
+  aspect-ratio: 1 / 1;
+  max-height: 34dvh;
+  border-radius: 3px;
   overflow: hidden;
-  background: radial-gradient(circle at 50% 38%, #232c44 0%, #0a0e16 72%);
-  border: 1px solid var(--line);
+  background: #16263f;
+  border: 1px solid rgba(22, 38, 63, 0.55);
   display: grid;
   place-items: center;
 }
 
 .emblem {
-  font-size: clamp(56px, 22vw, 88px);
-  line-height: 1;
-  filter: drop-shadow(0 6px 20px rgba(0, 0, 0, 0.7));
+  width: 66%;
+  height: auto;
+  display: block;
 }
 
 .title {
@@ -105,8 +120,7 @@ const emblem = computed(() => {
   font-weight: 700;
   letter-spacing: 0.2em;
   text-indent: 0.2em;
-  color: #f2f4ff;
-  text-shadow: 0 0 16px rgba(147, 164, 255, 0.35);
+  color: #16263f;
   text-align: center;
 }
 
@@ -122,43 +136,49 @@ const emblem = computed(() => {
 
 .lines li {
   padding: 6px 10px;
-  border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.04);
-  border-left: 2px solid var(--accent-dim);
+  border-radius: 2px;
+  background: #e5d9be;
+  border-left: 3px solid #46586e;
   font-size: 14px;
   line-height: 1.5;
-  color: #dfe5f5;
+  color: #1b2a3f;
 }
 
 .confirm {
   width: 100%;
   margin-top: 2px;
+  border: none;
+  border-radius: 2px;
+  background: #16263f;
+  color: #efe6d2;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-indent: 0.18em;
 }
 
-/* 阵营配色：狼是朱砂、好人是青玉 */
+.confirm:hover {
+  background: #22385a;
+}
+
+/* 阵营配色：狼是朱砂、好人是青玉、其余保持墨蓝 */
 .card.wolf .title {
-  color: #ffb4ae;
-  text-shadow: 0 0 18px rgba(210, 85, 74, 0.5);
+  color: #a32b22;
 }
 
 .card.wolf .lines li {
-  border-left-color: var(--blood);
-}
-
-.card.wolf .art {
-  border-color: rgba(210, 85, 74, 0.5);
+  border-left-color: #b8342a;
 }
 
 .card.good .title {
-  color: #9ff0cd;
-  text-shadow: 0 0 18px rgba(88, 211, 166, 0.45);
+  color: #23604d;
 }
 
 .card.good .lines li {
-  border-left-color: var(--jade);
+  border-left-color: #2f6a58;
 }
 
-.card.good .art {
-  border-color: rgba(88, 211, 166, 0.5);
+/* 无阵营情报（死讯、女巫夜况）走墨蓝，别抢信息 */
+.card.neutral .title {
+  color: #16263f;
 }
 </style>

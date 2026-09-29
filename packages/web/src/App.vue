@@ -18,6 +18,7 @@ import {
   NIGHT_STEP_NAMES,
   NIGHT_STEPS,
   PHASE_LABELS,
+  ROLE_GLYPHS,
 } from './labels';
 import { deriveMarks } from './marks';
 import { useGameSocket } from './ws';
@@ -112,6 +113,20 @@ const stepSecondsLeft = computed(() => {
 
 const pendingSeat = computed(() => state.value?.pending?.seat ?? null);
 const speakingSeat = computed(() => streaming.value?.seat ?? null);
+
+/**
+ * 各席位最近一次发言的用时（秒），来自 spoke 事件上的 ms。
+ * 服务端测的是「发起生成/下发待办 → 说完」的墙钟，所以这里只是换算与展示，不做任何推断。
+ */
+const spokeSeconds = computed(() => {
+  const out: Record<number, number> = {};
+  for (const event of events.value) {
+    if (event.payload.t === 'spoke' && typeof event.payload.ms === 'number') {
+      out[event.payload.seat] = Math.max(1, Math.round(event.payload.ms / 1000));
+    }
+  }
+  return out;
+});
 
 /** 狼队友是不是已经「碰过面」：狼人睁眼那一刻就算认识了，之前（准备 / 守卫）还不知道 */
 const teammatesKnown = computed(() => {
@@ -321,8 +336,9 @@ function abort(): void {
       <span v-if="stepSecondsLeft > 0" class="chip step" title="这一步的固定倒计时：到点就换下一步，与有没有人行动无关">
         ⏳ {{ stepSecondsLeft }}s
       </span>
-      <!-- 上帝视角下每张底牌都印在头像上，这里就不用再报一遍自己的身份了 -->
-      <span v-if="myRole && !godView" class="chip mine">
+      <!-- 底牌：自己的身份做成一张米纸小卡，左边一枚朱砂/青玉印（木刻那套） -->
+      <span v-if="myRole && !godView" class="chip mine" :class="myRole === 'werewolf' ? 'wolf' : 'good'">
+        <i class="seal">{{ ROLE_GLYPHS[myRole] }}</i>
         {{ humanSeat }} 号 · {{ ROLE_LABELS[myRole] }}
       </span>
 
@@ -390,6 +406,7 @@ function abort(): void {
         :targets="targetLabels"
         :pending-seat="pendingSeat"
         :speaking-seat="speakingSeat"
+        :spoke-seconds="spokeSeconds"
         :human-seat="humanSeat"
         @pick="pickSeat"
       />
@@ -410,6 +427,7 @@ function abort(): void {
         :targets="targetLabels"
         :pending-seat="pendingSeat"
         :speaking-seat="speakingSeat"
+        :spoke-seconds="spokeSeconds"
         :human-seat="humanSeat"
         @pick="pickSeat"
       />
@@ -485,6 +503,10 @@ function abort(): void {
     radial-gradient(1.2px 1.2px at 62% 10%, rgba(255, 255, 255, 0.45), transparent 100%),
     radial-gradient(1.5px 1.5px at 85% 19%, rgba(255, 255, 255, 0.5), transparent 100%),
     radial-gradient(1.3px 1.3px at 72% 30%, rgba(255, 255, 255, 0.35), transparent 100%),
+    radial-gradient(2.2px 2.2px at 8% 32%, rgba(255, 255, 255, 0.75), transparent 100%),
+    radial-gradient(1.1px 1.1px at 38% 12%, rgba(255, 255, 255, 0.4), transparent 100%),
+    radial-gradient(1.9px 1.9px at 55% 27%, rgba(255, 255, 255, 0.6), transparent 100%),
+    radial-gradient(1.2px 1.2px at 92% 9%, rgba(255, 255, 255, 0.45), transparent 100%),
     linear-gradient(180deg, #0a0f1a 0%, #05070c 100%);
 }
 
@@ -593,10 +615,36 @@ function abort(): void {
   color: #b3c0ff;
 }
 
+/* 底牌：米纸小卡 + 一枚角色印。印用单字（狼/预/女/猎/守/民），比缩到 20px 的徽记清楚得多 */
 .chip.mine {
-  background: rgba(88, 211, 166, 0.12);
-  border-color: rgba(88, 211, 166, 0.42);
-  color: var(--jade);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 9px 1px 3px;
+  border-radius: 3px;
+  border-width: 2px;
+  background: #efe6d2;
+  border-color: #16263f;
+  color: #16263f;
+  font-weight: 700;
+}
+
+.chip.mine .seal {
+  width: 17px;
+  height: 17px;
+  display: grid;
+  place-items: center;
+  border-radius: 2px;
+  background: #2f6a58;
+  color: #efe6d2;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.chip.mine.wolf .seal {
+  background: #b8342a;
 }
 
 /* 夜间那一步的固定倒计时 */

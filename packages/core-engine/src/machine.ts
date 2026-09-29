@@ -894,6 +894,8 @@ function applyAction(state: GameState, events: GameEvent[], action: Action): voi
         seat: action.actor,
         text: action.text,
         context: speechContextFor(state.phase),
+        // 拿不到起点的一方不填 ms（可选字段），别瞎编一个耗时
+        ...(action.ms !== undefined ? { ms: action.ms } : {}),
       });
       state.speech.spoken.push(action.actor);
       if (state.phase === 'LAST_WORDS') {
@@ -904,6 +906,8 @@ function applyAction(state: GameState, events: GameEvent[], action: Action): voi
       }
       break;
     case 'vote':
+      // 投票是明票：收到一张就公开一张，后面的看得到已亮出的票型
+      emit(state, events, { t: 'voted', seat: action.actor, target: action.target });
       if (state.phase === 'CHIEF_VOTE' || state.phase === 'CHIEF_PK_VOTE') {
         if (action.target !== 'abstain') state.chief.votes.push({ seat: action.actor, target: action.target });
       } else {

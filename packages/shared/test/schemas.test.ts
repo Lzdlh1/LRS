@@ -192,6 +192,27 @@ describe('GameEvent schema', () => {
     });
     expect(zeroDeadline.success).toBe(false);
   });
+
+  it('spoke 的 ms 可选：老数据（没有 ms）与新数据都接受，负数拒绝', () => {
+    const base = { seq: 3, day: 1, phase: 'DAY_SPEECH' as const, visibility: { scope: 'public' as const } };
+    const withoutMs = gameEventSchema.safeParse({
+      ...base,
+      payload: { t: 'spoke', seat: 2, text: '说两句', context: 'day' },
+    });
+    expect(withoutMs.success).toBe(true);
+
+    const withMs = gameEventSchema.safeParse({
+      ...base,
+      payload: { t: 'spoke', seat: 2, text: '说两句', context: 'day', ms: 1500 },
+    });
+    expect(withMs.success).toBe(true);
+
+    const negative = gameEventSchema.safeParse({
+      ...base,
+      payload: { t: 'spoke', seat: 2, text: '说两句', context: 'day', ms: -1 },
+    });
+    expect(negative.success).toBe(false);
+  });
 });
 
 describe('角色与阶段工具函数', () => {

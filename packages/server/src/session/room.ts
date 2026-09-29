@@ -108,6 +108,13 @@ export class GameRoom {
   private readonly subscribers = new Map<string, Subscriber>();
   private timer: NodeJS.Timeout | null = null;
   private deadlineAt = 0;
+  /**
+   * 「把发言交给真人」的时刻（毫秒）；不是真人发言待办时为 null。
+   *
+   * 用来给真人的 spoke 事件填耗时（spoke.ms）—— 起点是待办下发，终点是这次提交。
+   * AI 的发言不走这里：它自己量好耗时带在 Action 上。
+   */
+  private humanSpeechAt: number | null = null;
   private finished = false;
   /**
    * 真人按下的暂停。
@@ -244,7 +251,7 @@ export class GameRoom {
     }
 
     this.clearTimer();
-    const result = step(this.state, action);
+    const result = step(this.state, this.withHumanSpeechMs(action));
     this.state = result.state;
 
     this.logger.debug('提交行动', {
@@ -270,6 +277,21 @@ export class GameRoom {
     this.broadcast(result.events);
     if (holding) return;
     this.scheduleAi();
+  }
+
+  /**
+   * 给真人这次的发言补上耗时（spoke.ms）。
+   *
+   * 起点是「发言待办下发给真人」的时刻，终点是这次提交 —— 两者都有才填；
+   * AI 的发言不会走到这里（它自带 ms），拿不到起点时也原样放行。
+   */
+  private withHumanSpeechMs(action: Action): Action {
+    if (action.kind !== 'speak' || action.actor !== this.humanSeat || this.humanSpeechAt === null) {
+      return action;
+    }
+    const ms = Math.max(0, Date.now() - this.humanSpeechAt);
+    this.humanSpeechAt = null;
+    return { ...action, ms };
   }
 
   /**
@@ -462,6 +484,7 @@ export class GameRoom {
     this.prefetch.clear();
     this.prefetchBatch = '';
     this.decisions = [];
+    this.humanSpeechAt = null;
 
     const rng = seed === undefined ? Math.random : mulberry32(seed);
     // 位次每局重抽：先抽座位，再抽牌 —— 固定种子依然能完整复现一局
@@ -527,6 +550,24 @@ export class GameRoom {
     this.logEvents(newEvents);
     this.persist(newEvents);
     this.host?.observe(newEvents);
+    this.trackHumanSpeech(newEvents);
+  }
+
+  /**
+   * 待办通过 action_requested 事件下发，这里记下「把发言交给真人」的时刻。
+   *
+   * 不是真人发言待办（轮到 AI、或轮到真人做别的）就清掉，
+   * 免得把上一次的起点误算到下一段发言上。
+   */
+  private trackHumanSpeech(events: readonly GameEvent[]): void {
+    for (const event of events) {
+      if (event.payload.t !== 'action_requested') continue;
+      this.humanSpeechAt =
+        event.payload.seat === this.humanSeat &&
+        event.payload.options.some((option) => option.kind === 'speak')
+          ? Date.now()
+          : null;
+    }
   }
 
   private checkFinished(): void {

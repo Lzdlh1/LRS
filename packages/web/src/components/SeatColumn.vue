@@ -14,6 +14,8 @@ const props = defineProps<{
   targets: Record<number, string[]>;
   pendingSeat: number | null;
   speakingSeat: number | null;
+  /** 座位 → 最近一次发言用时（秒），来自 spoke.ms */
+  spokeSeconds: Record<number, number>;
   humanSeat: number;
 }>();
 
@@ -56,8 +58,9 @@ function ownRoleText(item: ClientSeat): string {
       <span class="head">
         <span class="avatar">
           <span class="num">{{ item.seat }}</span>
-          <span v-if="!item.alive" class="cross">✕</span>
         </span>
+        <!-- 出局：盖一枚朱砂「出局」章。原来那个 ✕ 在小头像上几乎看不见 -->
+        <span v-if="!item.alive" class="out-stamp">出局</span>
         <!-- 自己那个座位一眼要认得出来：不写「我」，就得回头翻日志数座位 -->
         <span v-if="item.seat === humanSeat" class="me-tag">我</span>
         <span v-else-if="item.role" class="glyph" :title="`身份：${ROLE_GLYPHS[item.role]}`">
@@ -81,6 +84,10 @@ function ownRoleText(item: ClientSeat): string {
         {{ item.seat === humanSeat ? ownRoleText(item) : item.name }}
       </span>
       <span v-if="pickable(item.seat)" class="say">{{ targets[item.seat]?.[0] }}</span>
+      <!-- 能点的时候优先让位给「点这里」，否则显示上次发言用时 -->
+      <span v-else-if="spokeSeconds[item.seat]" class="took" title="最近一次发言用时">
+        用时 {{ spokeSeconds[item.seat] }}s
+      </span>
     </button>
   </aside>
 </template>
@@ -177,20 +184,21 @@ function ownRoleText(item: ClientSeat): string {
   text-overflow: ellipsis;
 }
 
-/* 身份角标：上帝视角或本人看得到 */
+/* 身份角标：上帝视角或本人看得到。米纸小印，单字 */
 .glyph {
   position: absolute;
-  left: -2px;
-  top: -2px;
-  min-width: 15px;
-  height: 15px;
+  left: -3px;
+  top: -3px;
+  min-width: 16px;
+  height: 16px;
   padding: 0 3px;
-  border-radius: 8px;
-  background: rgba(10, 13, 20, 0.9);
-  border: 1px solid var(--accent-dim);
-  color: var(--accent);
+  border-radius: 2px;
+  background: #efe6d2;
+  border: 2px solid #16263f;
+  color: #16263f;
   font-size: 10px;
-  line-height: 13px;
+  font-weight: 700;
+  line-height: 12px;
   text-align: center;
 }
 
@@ -201,11 +209,12 @@ function ownRoleText(item: ClientSeat): string {
   top: -5px;
   min-width: 17px;
   height: 17px;
-  line-height: 17px;
+  line-height: 13px;
   padding: 0 4px;
-  border-radius: 9px;
-  background: var(--jade);
-  color: #05271c;
+  border-radius: 2px;
+  background: #2f6a58;
+  border: 2px solid #16263f;
+  color: #efe6d2;
   font-size: 11px;
   font-weight: 700;
   text-align: center;
@@ -227,7 +236,7 @@ function ownRoleText(item: ClientSeat): string {
   filter: drop-shadow(0 0 3px rgba(217, 178, 106, 0.6));
 }
 
-/* 已知阵营：压在头像下沿，字号给足 */
+/* 已知阵营：压在头像下沿。木刻方角印 —— 狼是朱砂、好人是青玉 */
 .mark {
   position: absolute;
   left: 50%;
@@ -235,25 +244,24 @@ function ownRoleText(item: ClientSeat): string {
   transform: translateX(-50%);
   padding: 0 6px;
   min-width: 22px;
-  border-radius: 9px;
+  border-radius: 2px;
+  border: 2px solid #16263f;
   font-size: 12px;
   font-weight: 700;
-  line-height: 16px;
+  line-height: 15px;
   text-align: center;
   white-space: nowrap;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
 }
 
 .mark.wolf {
-  background: #4a1c1c;
-  border: 1px solid var(--blood);
-  color: #ffb4ae;
+  background: #b8342a;
+  color: #efe6d2;
 }
 
 .mark.good {
-  background: #123a2c;
-  border: 1px solid var(--jade);
-  color: #9ff0cd;
+  background: #2f6a58;
+  color: #efe6d2;
 }
 
 .note {
@@ -265,13 +273,23 @@ function ownRoleText(item: ClientSeat): string {
   filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.8));
 }
 
-.cross {
+/* 出局章：斜盖在头像上。小头像里那个 ✕ 根本看不清，改成两个字才读得出来 */
+.out-stamp {
   position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  font-size: calc(var(--avatar) * 0.62);
-  color: rgba(210, 85, 74, 0.9);
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%) rotate(-14deg);
+  padding: 0 5px;
+  border: 2px solid #b8342a;
+  border-radius: 2px;
+  background: rgba(8, 13, 24, 0.68);
+  color: #e58379;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 15px;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 /* ── 状态 ── */
@@ -350,5 +368,15 @@ function ownRoleText(item: ClientSeat): string {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* 发言用时：跟流程节奏有关，但要退到比「点这里」更弱的位置 */
+.took {
+  max-width: 100%;
+  font-size: 9.5px;
+  line-height: 1.2;
+  color: #8b93a8;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 </style>

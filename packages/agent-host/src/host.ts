@@ -36,6 +36,8 @@ export interface AgentHostOptions {
   onSpeech?: (seat: SeatId, text: string) => void;
   /** 每次决策完成后的回调，供复盘与离线分析使用 */
   onDecision?: (entry: DecisionLogEntry) => void;
+  /** 可注入的时钟（毫秒），测试用；默认 Date.now */
+  now?: () => number;
 }
 
 export interface CreateHostOptions {
@@ -51,6 +53,8 @@ export interface CreateHostOptions {
   onSpeechDelta?: (seat: SeatId, delta: string) => void;
   onSpeech?: (seat: SeatId, text: string) => void;
   onDecision?: (entry: DecisionLogEntry) => void;
+  /** 可注入的时钟（毫秒），测试用；默认 Date.now */
+  now?: () => number;
 }
 
 function speechContextFor(phase: GameState['phase']): SpeechContext | null {
@@ -84,6 +88,8 @@ export class AgentHost {
   private readonly onSpeech: ((seat: SeatId, text: string) => void) | null;
   private readonly onSpeechDelta: ((seat: SeatId, delta: string) => void) | null;
   private readonly onDecision: ((entry: DecisionLogEntry) => void) | null;
+  /** 取当前时刻（毫秒），用来量 AI 这次发言的生成耗时 */
+  private readonly now: () => number;
   /**
    * 想好了但还没说出口的身份宣称。
    *
@@ -101,6 +107,7 @@ export class AgentHost {
     this.onSpeech = options.onSpeech ?? null;
     this.onSpeechDelta = options.onSpeechDelta ?? null;
     this.onDecision = options.onDecision ?? null;
+    this.now = options.now ?? Date.now;
     this.facts = createFacts(options.seatCount);
     this.agents = new Map(
       options.seats.map((seat) => [
@@ -176,6 +183,7 @@ export class AgentHost {
 
     const kind = pending.options[0]?.kind ?? 'speak';
     const delta = this.onSpeechDelta;
+    const startedAt = this.now();
     const result = await agent.decide(
       {
         facts: this.facts,
@@ -209,8 +217,11 @@ export class AgentHost {
     });
 
     if (result.action.kind === 'speak') {
-      this.logger.debug('AI 发言', { seat: pending.seat, kind, length: result.action.text.length });
+      // 起点是发起这次发言的生成请求（决策 + 演绎都在 decide 里），终点是拿到文本
+      const ms = Math.max(0, this.now() - startedAt);
+      this.logger.debug('AI 发言', { seat: pending.seat, kind, length: result.action.text.length, ms });
       this.onSpeech?.(pending.seat, result.action.text);
+      return { ...result.action, ms };
     } else {
       this.logger.debug('AI 行动', { seat: pending.seat, kind, action: result.action.kind });
     }
@@ -279,5 +290,6 @@ export function createAgentHost(options: CreateHostOptions): AgentHost {
     onSpeech: options.onSpeech,
     onSpeechDelta: options.onSpeechDelta,
     onDecision: options.onDecision,
+    now: options.now,
   });
 }

@@ -367,6 +367,55 @@ describe('Agent 决策映射', () => {
   });
 });
 
+describe('发言耗时 ms', () => {
+  it('AI 发言带上「发起生成请求 → 拿到文本」的耗时', async () => {
+    // 可注入的时钟：每读一次前进 750ms，一次发言（读两次）就是 750ms
+    let clock = 0;
+    const host = createAgentHost({
+      router: makeRouter(mockBrain(seededRng(5))),
+      logger,
+      humanSeats: [1],
+      seatCount: 9,
+      names: NAMES,
+      rng: seededRng(5),
+      enableReflection: false,
+      now: () => (clock += 750),
+    });
+
+    let game = createGame({ fixedRoles: FIXED_ROLES, humanSeats: [1] });
+    host.observe(game.events);
+
+    // 一路走到第一次 AI 发言（发起动作前先停住）
+    let speechPending: PendingRequest | null = null;
+    for (let i = 0; i < 300; i += 1) {
+      const pending = pendingRequest(game.state);
+      if (!pending) break;
+      if (needsSpeech(pending) && host.handles(pending.seat)) {
+        speechPending = pending;
+        break;
+      }
+      const action = host.handles(pending.seat)
+        ? await host.act(game.state, pending)
+        : humanFallback(pending);
+      const next = step(game.state, action);
+      game = next;
+      host.observe(next.events);
+    }
+
+    expect(speechPending).not.toBeNull();
+    const speech = await host.act(game.state, speechPending!);
+    expect(speech.kind).toBe('speak');
+    if (speech.kind !== 'speak') throw new Error('这一步一定是发言');
+    expect(speech.ms).toBe(750);
+
+    // 落到引擎之后，spoke 事件上带着同一个 ms
+    const after = step(game.state, speech);
+    const spoke = after.events.find((event) => event.payload.t === 'spoke');
+    if (spoke?.payload.t !== 'spoke') throw new Error('应当产出 spoke 事件');
+    expect(spoke.payload.ms).toBe(750);
+  });
+});
+
 describe('整局跑通', () => {
   it('AI 靠假大脑也能把一整局打完，且零非法行动', async () => {
     const rng = seededRng(2024);

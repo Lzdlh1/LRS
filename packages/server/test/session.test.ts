@@ -862,3 +862,42 @@ describe('并行预思考', () => {
     expect(speakCalls.length, `发言阶段同时发起了 ${speakCalls.length} 个决策`).toBeLessThanOrEqual(2);
   });
 });
+
+describe('真人发言耗时 spoke.ms', () => {
+  it('真人发言带上「下发待办 → 提交」的耗时', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+
+    const { room } = makeRoom(2024);
+    const god = collector();
+    god.subscribe(room, 'god', 'god');
+
+    // 推到「轮到真人发言」
+    for (let i = 0; i < 400; i += 1) {
+      if (god.state().ackSeq.length > 0) {
+        room.handleMessage('god', { type: 'resume' });
+        continue;
+      }
+      const current = god.state().pending;
+      if (!current || god.state().winner !== null) break;
+      if (current.options[0]?.kind === 'speak' && current.seat === room.humanSeatId) break;
+      const action = driveAction(current);
+      if (!action) break;
+      room.submit(action, 'client');
+    }
+
+    const pending = god.state().pending;
+    expect(pending?.options[0]?.kind).toBe('speak');
+    expect(pending?.seat).toBe(room.humanSeatId);
+
+    // 真人「想了」3.5 秒才提交
+    vi.setSystemTime(1_003_500);
+    room.submit({ kind: 'speak', actor: room.humanSeatId, text: '（真人）我先听听。' }, 'client');
+
+    const spoke = god
+      .last()
+      .events.find((event) => event.payload.t === 'spoke' && event.payload.seat === room.humanSeatId);
+    if (spoke?.payload.t !== 'spoke') throw new Error('应当产出真人的 spoke 事件');
+    expect(spoke.payload.ms).toBe(3500);
+  });
+});

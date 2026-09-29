@@ -75,6 +75,8 @@ export const actionSchema = z.discriminatedUnion('kind', [
     kind: z.literal('speak'),
     actor: seatIdSchema,
     text: z.string().min(1).max(2000),
+    /** 这次发言的耗时（毫秒），由产出该动作的一方测好后带上；引擎只管透传给 spoke 事件 */
+    ms: z.number().int().min(0).optional(),
   }),
   z.object({
     kind: z.literal('vote'),

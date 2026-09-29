@@ -1,4 +1,5 @@
 import type { Action, GameEvent, Phase, Role } from '@lrs/shared';
+import { gameEventSchema } from '@lrs/shared';
 import { describe, expect, it } from 'vitest';
 import { choicesFor } from '../src/choices.ts';
 import { beatNightStep, createGame, isOver, pendingRequest, step } from '../src/machine.ts';
@@ -458,5 +459,113 @@ describe('第 1 天：警长竞选（变体 A）', () => {
   it('游戏尚未结束', () => {
     const { state } = newGame();
     expect(isOver(state)).toBe(false);
+  });
+});
+
+/** 首夜无人死亡：守卫守住狼刀，女巫不用药 */
+const quietNight = () =>
+  firstNight({
+    guardTarget: 8,
+    wolfTarget: 8,
+    witchAction: { kind: 'witch_act', actor: WITCH, use: 'pass' },
+    seerTarget: 7,
+  });
+
+describe('投票事件 voted', () => {
+  /** 走到警下投票：1、2 号上警、各说一句、都不退水，其余不上警 */
+  function toChiefVote(): GameState {
+    const actions: Action[] = [
+      ...quietNight(),
+      { kind: 'chief_signup', actor: 1, join: true },
+      { kind: 'chief_signup', actor: 2, join: true },
+      ...[3, 4, 5, 6, 7, 8, 9].map((actor) => ({ kind: 'chief_signup', actor, join: false }) as Action),
+      { kind: 'speak', actor: 1, text: '1 号竞选发言' },
+      { kind: 'speak', actor: 2, text: '2 号竞选发言' },
+      { kind: 'chief_withdraw', actor: 1, withdraw: false },
+      { kind: 'chief_withdraw', actor: 2, withdraw: false },
+    ];
+    return run(newGame(), actions).state;
+  }
+
+  /** 走到白天投票：全员不上警（警徽流失）→ 依次发完言 */
+  function toDayVote(): GameState {
+    const afterChief = run(newGame(), [
+      ...quietNight(),
+      ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((actor) => ({ kind: 'chief_signup', actor, join: false }) as Action),
+    ]).state;
+    const speaks = [1, 2, 3, 4, 5, 6, 7, 8, 9].map(
+      (actor) => ({ kind: 'speak', actor, text: `${actor} 号发言` }) as Action,
+    );
+    return run({ state: afterChief, events: [] }, speaks).state;
+  }
+
+  it('警长竞选投票：每收到一张票就 emit 一个公开的 voted', () => {
+    const state = toChiefVote();
+    expect(state.phase).toBe('CHIEF_VOTE');
+    expect(pendingRequest(state)?.seat).toBe(3);
+
+    const after = step(state, { kind: 'vote', actor: 3, target: 2 });
+    expect(payloads(after.events, 'action_rejected')).toEqual([]);
+
+    const voted = payloads(after.events, 'voted');
+    expect(voted).toHaveLength(1);
+    expect(voted[0]).toMatchObject({ seat: 3, target: 2 });
+    expect(after.events.find((e) => e.payload.t === 'voted')?.visibility).toEqual({ scope: 'public' });
+  });
+
+  it('白天投票：每收到一张票就 emit 一个公开的 voted', () => {
+    const state = toDayVote();
+    expect(state.phase).toBe('DAY_VOTE');
+    expect(pendingRequest(state)?.seat).toBe(1);
+
+    const after = step(state, { kind: 'vote', actor: 1, target: 5 });
+    expect(payloads(after.events, 'action_rejected')).toEqual([]);
+
+    const voted = payloads(after.events, 'voted');
+    expect(voted).toHaveLength(1);
+    expect(voted[0]).toMatchObject({ seat: 1, target: 5 });
+    expect(after.events.find((e) => e.payload.t === 'voted')?.visibility).toEqual({ scope: 'public' });
+  });
+
+  it('弃票也 emit voted，target 是 abstain', () => {
+    const state = toDayVote();
+
+    const after = step(state, { kind: 'vote', actor: 1, target: 'abstain' });
+    expect(payloads(after.events, 'action_rejected')).toEqual([]);
+
+    const voted = payloads(after.events, 'voted');
+    expect(voted).toHaveLength(1);
+    expect(voted[0]).toMatchObject({ seat: 1, target: 'abstain' });
+  });
+});
+
+describe('发言耗时 spoke.ms', () => {
+  /** 走到第一次竞选发言：1、2 号上警，先轮到 1 号说 */
+  function toChiefSpeech(): GameState {
+    return run(newGame(), [
+      ...quietNight(),
+      { kind: 'chief_signup', actor: 1, join: true },
+      { kind: 'chief_signup', actor: 2, join: true },
+      ...[3, 4, 5, 6, 7, 8, 9].map((actor) => ({ kind: 'chief_signup', actor, join: false }) as Action),
+    ]).state;
+  }
+
+  it('Action 带了 ms：透传到 spoke 事件', () => {
+    const state = toChiefSpeech();
+    expect(pendingRequest(state)?.options[0]?.kind).toBe('speak');
+
+    const after = step(state, { kind: 'speak', actor: 1, text: '1 号竞选发言', ms: 1234 });
+    const spoke = payloads(after.events, 'spoke');
+    expect(spoke).toHaveLength(1);
+    expect(spoke[0]?.ms).toBe(1234);
+  });
+
+  it('Action 没带 ms（拿不到起点）：事件里就没有 ms 字段，老数据照样过校验', () => {
+    const state = toChiefSpeech();
+
+    const after = step(state, { kind: 'speak', actor: 1, text: '1 号竞选发言' });
+    const event = after.events.find((e) => e.payload.t === 'spoke')!;
+    expect('ms' in event.payload).toBe(false);
+    expect(gameEventSchema.safeParse(event).success).toBe(true);
   });
 });

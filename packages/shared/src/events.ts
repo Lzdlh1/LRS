@@ -79,6 +79,14 @@ export const eventPayloadSchema = z.discriminatedUnion('t', [
     seat: seatIdSchema,
     text: z.string(),
     context: speechContextSchema,
+    /**
+     * 这次发言从「开始发言」到「说完」的墙钟毫秒数。
+     *
+     * 可选：只有能可靠测出起点与终点的路径才带（AI 从发起生成请求到产出文本、
+     * 真人从下发待办到提交）。复盘、补发、快照重放这类拿不到起点的路径就不填，
+     * 老数据（没有这个字段）也照样通过校验。
+     */
+    ms: z.number().int().min(0).optional(),
   }),
 
   // ── 夜晚私有信息 ──

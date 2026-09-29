@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>联络表 · 试色</title>
+<style>html,body{margin:0;padding:0;background:#111}</style>
+<script src="./node_modules/p5/lib/p5.min.js"></script>
+<script src="./node_modules/p5.brush/dist/p5.brush.js"></script>
+</head>
+<body>
+<script>
+const W = 1240, P = 600, GAP = 40;
+
+/* ---------- 小工具 ---------- */
+function rrPts(x, y, w, h, r, n = 6) {
+  const pts = [];
+  const corner = (cx, cy, a0) => {
+    for (let i = 0; i <= n; i++) {
+      const a = a0 + (Math.PI / 2) * (i / n);
+      pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]);
+    }
+  };
+  corner(x + w - r, y + h - r, 0);
+  corner(x + r, y + h - r, Math.PI / 2);
+  corner(x + r, y + r, Math.PI);
+  corner(x + w - r, y + r, Math.PI * 1.5);
+  return pts;
+}
+function shapeFrom(pts, curv = 0.12, close = true) {
+  brush.beginShape(curv);
+  for (const p of pts) brush.vertex(p[0], p[1]);
+  brush.endShape(close);
+}
+// 水彩质感：大面积只用很轻的渗色，重了就是一坨云
+// 第三参 scatter 必须 false —— 默认 true 会在边缘撒一圈碎多边形（浅色麻点边），毁剪影
+function paper(color, op, bleed = 0.05, tex = 0.26, border = 0.1) {
+  brush.noStroke();   // 必须：否则会沿用上一次 brush.set 的笔，把剪影描成亮线
+  brush.fill(color, op); brush.fillBleed(bleed, 'out'); brush.fillTexture(tex, border, false);
+}
+// 实色块不要走这里：brush 的 fill 一旦开渗色/纹理，大块实色会被摊薄到发白（已实测），
+// 实色一律用下面的 nshape（p5 原生平涂）。
+
+// 竖向水彩渐变：分带平涂，边缘自带水痕，正是水彩天空的画法
+function vGrad(w, y0, y1, c0, c1, n = 24) {
+  const a = color(c0), b = color(c1);
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1), y = y0 + (y1 - y0) * t;
+    const dy = (y1 - y0) / (n - 1) + 2;
+    brush.wash(lerpColor(a, b, t), 255); brush.rect(-2, y, w + 4, dy); brush.noWash();
+  }
+}
+// 剪影：局部坐标 → 画布坐标（tilt 让形体跟着山脊倾斜）
+function polys(pts, ox, oy, s, tilt = 0) {
+  return pts.map(p => [ox + p[0] * s, oy + p[1] * s + p[0] * s * tilt]);
+}
+// 剪影用 p5 原生平涂，不用 p5.brush —— 实测 brush 的 fill 会把细腿糊掉、大块发白，
+// 而"准、实、有齿"恰恰是剪影唯一的要求。轻微抖动是为了保住手绘感。
+function nshape(pts, col, jitter = 2) {
+  noStroke(); fill(col);
+  beginShape();
+  for (const p of pts) vertex(p[0] + random(-jitter, jitter), p[1] + random(-jitter, jitter));
+  endShape(CLOSE);
+}
+// 面板墨框：细钢笔线，手绘感
+function framePanel(w, h, c = '#3a3226') {
+  brush.set('pen', c, 1.1); brush.noFill();
+  shapeFrom(rrPts(7, 7, w - 14, h - 14, 12), 0.08);
+}
+
+/* ---------- P1 夜 ---------- */
+function nightPanel(w, h) {
+  brush.noStroke();
+  // 天：天顶近黑 → 地平线月光晕（值域拉开，剪影才有戏）
+  vGrad(w, 0, h, '#05080f', '#3d5a92', 26);
+
+  // 月：多层柔晕（硬边会变成一圈脏环）→ 盘
+  const mx = w * 0.24, my = h * 0.19;
+  for (let i = 3; i >= 1; i--) {
+    paper('#9db4e2', 8, 0.55, 0, 0); brush.circle(mx, my, 62 + i * 34);
+  }
+  brush.wash('#f7f2e0', 255); brush.circle(mx, my, 56); brush.noWash();
+
+  // 星：用 pen 点，spray 在 2.6 倍缩放下会糊成一团云
+  brush.set('pen', '#ffffff', 0.3);
+  for (let i = 0; i < 46; i++) {
+    const x = random(w), y = random(h * 0.5);
+    brush.line(x, y, x + 0.5, y);
+  }
+
+  // 远山：留一段平台给狼落脚（原生平涂，山脊才干净）
+  nshape([[-20, h], [-20, h * 0.6], [w * 0.16, h * 0.47], [w * 0.42, h * 0.56], [w * 0.62, h * 0.44], [w * 0.86, h * 0.5], [w + 20, h * 0.46], [w + 20, h]], '#1c2b4a', 3);
+
+  // 近山：更深一层，压住下缘
+  nshape([[-20, h], [-20, h * 0.84], [w * 0.22, h * 0.76], [w * 0.52, h * 0.86], [w * 0.8, h * 0.78], [w + 20, h * 0.84], [w + 20, h]], '#0a1220', 3);
+
+  // 冷杉林：锯齿要尖，颜色压到近黑
+  const t = [[-20, h]];
+  let x = -20;
+  while (x < w * 0.42) {
+    const tw = 26 + random(22), th = 90 + random(90);
+    t.push([x, h * 0.9]);
+    t.push([x + tw / 2, h * 0.9 - th]);
+    t.push([x + tw, h * 0.9]);
+    x += tw * 0.6;
+  }
+  t.push([w * 0.42, h]);
+  nshape(t, '#04070d', 1);
+
+  // 主角：站在远山脊上仰头长啸的狼剪影（约 180×140，太小腿会糊）
+  const wolf = [
+    [0, 3], [16, 12], [20, 9], [24, 0], [27, 10], [32, 1], [35, 13],
+    [40, 17], [47, 18], [57, 19], [64, 12], [69, 24], [60, 25],
+    [62, 38], [60, 54], [52, 54], [53, 28],
+    [43, 28], [41, 54], [33, 54], [35, 28],
+    [28, 19], [20, 15], [8, 9],
+  ];
+  const ws = (h / 600) * 2.6, woy = h * 0.495 - 54 * ws;
+  nshape(polys(wolf, w * 0.52, woy, ws, 0.08), '#02040a', 1);
+
+  // 地雾：极淡一条
+  paper('#b9c9ff', 20, 0.2, 0.2, 0.08); brush.rect(0, h * 0.86, w, h * 0.14);
+
+  framePanel(w, h);
+}
+
+/* ---------- P2 昼 ---------- */
+function dayPanel(w, h) {
+  brush.noStroke();
+  // 天：天顶冷蓝 → 地平线暖金（一亮一暖，和白昼彻底区分）
+  vGrad(w, 0, h * 0.62, '#9dbfdd', '#f6dfae', 22);
+
+  // 日：金盘 + 大晕
+  const sx = w * 0.28, sy = h * 0.21;
+  paper('#f6c86a', 34, 0.22, 0.24, 0.1); brush.circle(sx, sy, 168);
+  paper('#ffdf95', 46, 0.18, 0.2, 0.1); brush.circle(sx, sy, 104);
+  brush.wash('#fff3cd', 255); brush.circle(sx, sy, 52); brush.noWash();
+
+  // 云：白得很实，才有体积
+  paper('#fffdf7', 150, 0.22, 0.22, 0.1);
+  brush.circle(w * 0.68, h * 0.15, 48); brush.circle(w * 0.76, h * 0.17, 36); brush.circle(w * 0.60, h * 0.18, 28);
+  paper('#fffefb', 130, 0.22, 0.2, 0.1);
+  brush.circle(w * 0.42, h * 0.30, 32); brush.circle(w * 0.47, h * 0.32, 22);
+  paper('#fffdf7', 120, 0.22, 0.22, 0.1);
+  brush.circle(w * 0.86, h * 0.40, 30); brush.circle(w * 0.92, h * 0.42, 22);
+
+  // 远山：冷灰绿，与暖天拉开
+  paper('#8fa3a8', 200, 0.06, 0.22, 0.14);
+  shapeFrom([[-20, h], [-20, h * 0.6], [w * 0.2, h * 0.46], [w * 0.44, h * 0.58], [w * 0.72, h * 0.44], [w + 20, h * 0.56], [w + 20, h]], 0.18);
+  // 中景：橄榄
+  paper('#6d7c62', 225, 0.05, 0.22, 0.14);
+  shapeFrom([[-20, h], [-20, h * 0.78], [w * 0.28, h * 0.68], [w * 0.6, h * 0.8], [w + 20, h * 0.72], [w + 20, h]], 0.18);
+  // 前景：实色墨绿，压得住（原生平涂）
+  nshape([[-20, h], [-20, h * 0.9], [w * 0.34, h * 0.84], [w * 0.66, h * 0.92], [w + 20, h * 0.87], [w + 20, h]], '#3f4c37', 3);
+
+  // 田垄：细排线给地面质感
+  brush.hatchStyle('charcoal', '#2b3527', 0.45);
+  brush.hatch(9, 4, { rand: 0.35, gradient: 0.3 });
+  paper('#55663f', 120, 0.04, 0.18, 0.1);
+  brush.rect(0, h * 0.93, w, h * 0.07);
+  brush.noHatch();
+
+  // 右侧一棵冷杉：原生平涂，给前景一个立面
+  nshape(polys([[17, 0], [40, 142], [-6, 142]], w * 0.84, h * 0.6, h / 600), '#2c3726', 2);
+  nshape(polys([[8, 140], [26, 140], [26, 172], [8, 172]], w * 0.84, h * 0.6, h / 600), '#2c3726', 2);
+
+  framePanel(w, h);
+}
+
+/* ---------- P3 查验卡（字留给前端 HTML 叠，渲染只出纸与印） ---------- */
+function cardPanel(w, h) {
+  brush.noStroke();
+  brush.wash('#1a2135', 255); brush.rect(0, 0, w, h); brush.noWash();
+  paper('#232d47', 120, 0.14, 0.28, 0.12); brush.rect(0, h * 0.32, w, h * 0.68);
+
+  // 卡：羊皮纸
+  const card = rrPts(w * 0.15, h * 0.13, w * 0.70, h * 0.74, 16);
+  brush.wash('#f0e6cd', 255); shapeFrom(card, 0.1); brush.noWash();
+  paper('#e8dbba', 70, 0.06, 0.3, 0.16); shapeFrom(card, 0.1);      // 纸纹
+  paper('#d9c79f', 34, 0.05, 0.24, 0.12);                            // 上下压暗（收在卡内，别漏到背景上）
+  brush.rect(w * 0.17, h * 0.15, w * 0.66, h * 0.1);
+  brush.rect(w * 0.17, h * 0.75, w * 0.66, h * 0.1);
+
+  // 墨框：细线两圈
+  brush.set('pen', '#4a3c2a', 1.0); brush.noFill();
+  shapeFrom(card, 0.1);
+  brush.set('pen', '#8a7550', 0.5);
+  shapeFrom(rrPts(w * 0.18, h * 0.16, w * 0.64, h * 0.68, 12), 0.1);
+
+  // 中央徽记：朱砂湿染 → 手绘环 → 刻痕（刻痕用显式短线，hatch 会漏出圈外）
+  const cx = w * 0.5, cy = h * 0.5;
+  paper('#c8402f', 55, 0.1, 0.34, 0); brush.circle(cx, cy, 104);
+
+  brush.set('charcoal', '#b8342a', 2.8); brush.noFill();
+  brush.circle(cx, cy, 60, true);
+  brush.set('pen', '#b8342a', 1.0);
+  brush.circle(cx, cy, 50, true);
+  brush.set('charcoal', '#b8342a', 1.6);
+  for (let i = 0; i < 6; i++) {
+    const y = cy - 15 + i * 6;
+    const dx = i === 0 || i === 5 ? 10 : 16;
+    brush.line(cx - dx, y, cx + dx, y);
+  }
+  brush.set('charcoal', '#b8342a', 1.6);
+  brush.line(cx - 3, cy - 20, cx - 3, cy + 20);
+  brush.line(cx + 8, cy - 20, cx + 8, cy + 20);
+
+  framePanel(w, h, '#6b6045');
+}
+
+/* ---------- P4 参数与笔刷样本 ---------- */
+function swatchPanel(w, h) {
+  brush.noStroke();
+  brush.wash('#f6f1e6', 255); brush.rect(0, 0, w, h); brush.noWash();
+
+  // 上：同一块色，三档渗色/纹理
+  const combos = [
+    ['#c8402f', 0.03, 0.2, 'bleed .03 / tex .20'],
+    ['#c8402f', 0.08, 0.45, 'bleed .08 / tex .45'],
+    ['#c8402f', 0.18, 0.75, 'bleed .18 / tex .75'],
+  ];
+  combos.forEach((c, i) => {
+    const x = w * (0.08 + i * 0.31);
+    paper(c[0], 190, c[1], c[2], c[1] * 2);
+    brush.circle(x + 70, h * 0.22, 58);
+  });
+
+  // 中：同一支笔的不同 weight
+  brush.set('HB', '#2f2a26', 1);
+  brush.line(w * 0.08, h * 0.44, w * 0.92, h * 0.44);
+  brush.strokeWeight(3);
+  brush.line(w * 0.08, h * 0.50, w * 0.92, h * 0.50);
+  brush.strokeWeight(8);
+  brush.set('charcoal', '#2f2a26', 1);
+  brush.line(w * 0.08, h * 0.57, w * 0.92, h * 0.57);
+
+  // 下：一排笔
+  const names = ['pen', 'rotring', 'HB', '2B', '2H', 'cpencil', 'pastel', 'crayon', 'charcoal', 'spray', 'marker'];
+  names.forEach((n, i) => {
+    const y = h * (0.70 + Math.floor(i / 6) * 0.11);
+    const x = w * (0.08 + (i % 6) * 0.145);
+    brush.set(n, '#2a3a52', 1);
+    brush.strokeWeight(2.6);
+    brush.line(x, y, x + 78, y - 16);
+  });
+
+  framePanel(w, h);
+}
+
+/* ---------- 画布 ---------- */
+// 两个坑（都踩过）：
+//  1. pixelDensity 必须在 createCanvas 之前，否则 p5.brush 的内部画布对不上；
+//  2. 不能在 draw() 里 noLoop()，那一帧的笔刷层不 flush，只剩背景色。
+let frames = 0, painted = false;
+
+function setup() {
+  pixelDensity(1);
+  const cnv = createCanvas(W, W, WEBGL);
+  cnv.parent(document.body);
+  cnv.id('c');          // 只给 p5 建的画布这个 id，页面里不要再放静态 canvas
+  window.__w = W; window.__h = W;
+}
+
+function draw() {
+  frames += 1;
+  if (!painted) {
+    painted = true;
+    background('#ded6c6');      // 联络表底板：纸色
+    randomSeed(11);
+    brush.scaleBrushes(2.6);
+    try {
+      push(); translate(-W / 2, -W / 2); nightPanel(P, P); pop();
+      push(); translate(-W / 2, -W / 2); translate(P + GAP, 0); dayPanel(P, P); pop();
+      push(); translate(-W / 2, -W / 2); translate(0, P + GAP); cardPanel(P, P); pop();
+      push(); translate(-W / 2, -W / 2); translate(P + GAP, P + GAP); swatchPanel(P, P); pop();
+      window.__err = null;
+    } catch (e) {
+      window.__err = String(e && e.message ? e.message : e);
+    }
+  }
+  if (frames >= 3) window.__ready = true;
+}
+</script>
+</body>
+</html>

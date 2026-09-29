@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>风格三选 · 夜</title>
+<style>html,body{margin:0;padding:0;background:#111}</style>
+<script src="./node_modules/p5/lib/p5.min.js"></script>
+<script src="./node_modules/p5.brush/dist/p5.brush.js"></script>
+</head>
+<body>
+<script>
+// 三个方向共用同一构图（大狼 + 大月 + 山脊 + 松林），只换调性和处理：
+//   A 水墨   纸本淡墨 + 朱砂日轮 + 墨点 + 印章
+//   B 血月   靛夜 + 血色月 + 强光晕，最"狼人"
+//   C 木刻   三色平涂 + 粗轮廓 + 反白山脊，最硬最鲜明
+//
+// 分工（实测结论）：
+//   月亮/光晕/剪影 → p5 原生。几何精确、可叠透明度；brush 的 circle 直径会胖一圈，且 fill 会糊细节。
+//   天空/纸/印台/干笔 → p5.brush。要的就是那点水痕和渗色。
+const q = new URLSearchParams(location.search);
+const ONLY = q.has('only') ? Number(q.get('only')) : -1;   // 单出某一格（配合 render.mjs "style.html?only=1&pw=780"）
+const PW = Number(q.get('pw') || 400), PH = Number(q.get('ph') || 560), GAP = 25, PAD = 25;
+const W = ONLY >= 0 ? PW + PAD * 2 : PAD * 2 + PW * 3 + GAP * 2;
+const H = PH + PAD * 2;
+
+// 狼：注意吻部要有厚度。之前上缘 (0,3)-(16,12) 与下缘 (8,9)-(0,3) 几乎重合，
+// 画出来就是一根针，看着像"棍子"而不是狼。
+const WOLF = [
+  [0, 14], [20, 17], [24, 13], [28, 3], [31, 12], [36, 4], [39, 13],
+  [42, 17], [45, 24], [52, 20], [60, 21], [66, 22], [70, 15], [74, 27], [66, 28],
+  [68, 42], [66, 57], [58, 57], [59, 31],
+  [49, 31], [47, 57], [39, 57], [41, 31],
+  [35, 24], [30, 23], [24, 22], [14, 20], [4, 18],
+];
+const FAR = [[-20, 1], [-20, 0.62], [0.10, 0.54], [0.34, 0.50], [0.58, 0.58], [1.20, 0.53], [1.20, 1.05]];
+const NEAR = [[-20, 1], [-20, 0.78], [0.26, 0.70], [0.55, 0.78], [1.20, 0.72], [1.20, 1.05]];
+const WOLF_FEET = 0.545;      // 狼脚落在远山脊上
+const PINE_BASE = 0.565;
+
+/* ---------- 通用 ---------- */
+function shapeFrom(pts, curv = 0.1) {
+  brush.beginShape(curv); for (const p of pts) brush.vertex(p[0], p[1]); brush.endShape(true);
+}
+function paper(c, op, bleed = 0.05, tex = 0.2, border = 0.08) {
+  brush.noStroke(); brush.fill(c, op); brush.fillBleed(bleed, 'out'); brush.fillTexture(tex, border, false);
+}
+function vGrad(w, y0, y1, c0, c1, n = 24) {
+  const a = color(c0), b = color(c1);
+  for (let i = 0; i < n; i++) {
+    const y = y0 + (y1 - y0) * (i / (n - 1));
+    brush.wash(lerpColor(a, b, i / (n - 1)), 255);
+    brush.rect(-2, y, w + 4, (y1 - y0) / (n - 1) + 2); brush.noWash();
+  }
+}
+// 剪影 / 月亮 / 光晕：原生
+function nshape(pts, col, jitter = 2, sw = 0, sc = null) {
+  if (sw > 0 && sc) { stroke(sc); strokeWeight(sw); } else noStroke();
+  fill(col);
+  beginShape();
+  for (const p of pts) vertex(p[0] + random(-jitter, jitter), p[1] + random(-jitter, jitter));
+  endShape(CLOSE);
+}
+function nDisc(x, y, d, col) { noStroke(); fill(col); ellipse(x, y, d, d); }
+// 光晕：堆很多层很淡的同色圆。层数少就会看出一圈圈的"靶环"（已实测）
+function nGlow(x, y, d, col, steps = 50, grow = 0.05) {
+  for (let i = steps; i >= 1; i--) nDisc(x, y, d * (1 + grow * i), col);
+}
+const S = (pts, w, h) => pts.map(p => [p[0] < 0 ? p[0] : p[0] * w, p[1] <= 1.05 ? p[1] * h : p[1]]);
+const wolfPts = (ox, oy, s) => WOLF.map(p => [ox + (74 - p[0]) * s, oy + p[1] * s]);   // 镜像成朝右（对着月亮）
+// 松林带：closeY 决定这条林带有多"厚"，一路封到 h 就会变成一大块黑板
+function pines(w, h, x0, x1, base, closeY) {
+  const k = h / 560;                          // 绝对尺寸要跟着画布缩放，否则大图上树会变小
+  const t = [[x0, closeY]];
+  let x = x0;
+  while (x < x1) {
+    const tw = (12 + random(10)) * k, th = (46 + random(38)) * k;
+    t.push([x, base]); t.push([x + tw / 2, base - th]); t.push([x + tw, base]);
+    x += tw * 0.78;
+  }
+  t.push([x1, closeY]);
+  return t;
+}
+const wolfAt = (w, h, feet) => { const s = (h / 600) * 2.3; return wolfPts(w * 0.04, h * feet - 57 * s, s); };
+const wolf = (w, h) => wolfAt(w, h, WOLF_FEET);
+
+/* ---------- A 水墨 ---------- */
+function inkPanel(w, h) {
+  brush.noStroke();
+  brush.wash('#efe6d2', 255); brush.rect(-2, -2, w + 4, h + 4); brush.noWash();
+  vGrad(w, 0, h, '#ded4bc', '#f6efdd', 20);
+
+  nGlow(w * 0.72, h * 0.18, w * 0.30, 'rgba(191,58,43,0.016)');
+  nDisc(w * 0.72, h * 0.18, w * 0.30, '#bf3a2b');
+
+  nshape(S(FAR, w, h), 'rgba(32,29,24,0.26)', 3);
+  nshape(S(NEAR, w, h), 'rgba(18,16,13,0.84)', 3);
+  nshape(pines(w, h, w * 0.58, w * 1.06, h * 0.575, h * 0.70), '#12100d', 1);
+  nshape(wolf(w, h), '#12100d', 1);
+
+  // 墨点（原生，直径可控）
+  for (let i = 0; i < 34; i++) {
+    const x = random(w), y = random(h * 0.8);
+    nDisc(x, y, (1.2 + random(3.4)) * (w / 400), `rgba(20,18,15,${0.18 + random(0.35)})`);
+  }
+  // 右下印章
+  const ss = w * 0.15, sx = w * 0.80, sy = h * 0.84;
+  brush.set('charcoal', '#bf3a2b', 2.6); brush.noFill();
+  brush.rect(sx, sy, ss, ss);
+  brush.set('charcoal', '#bf3a2b', 1.5);
+  for (let i = 0; i < 4; i++) brush.line(sx + ss * 0.16, sy + ss * (0.26 + i * 0.17), sx + ss * 0.84, sy + ss * (0.26 + i * 0.17));
+  brush.set('pen', '#bf3a2b', 1.0);
+  brush.line(sx + ss * 0.5, sy + ss * 0.12, sx + ss * 0.5, sy + ss * 0.88);
+}
+
+/* ---------- B 血月 ---------- */
+function bloodPanel(w, h) {
+  brush.noStroke();
+  vGrad(w, 0, h, '#070a14', '#4a1f30', 26);
+  paper('#c2382a', 40, 0.24, 0.14, 0.06); brush.rect(0, h * 0.50, w, h * 0.20);
+
+  const mx = w * 0.72, my = h * 0.18;
+  nGlow(mx, my, w * 0.30, 'rgba(255,96,52,0.012)');
+  nDisc(mx, my, w * 0.30, '#d8452f');
+  nDisc(mx, my, w * 0.30 * 0.86, 'rgba(255,140,90,0.30)');
+
+  brush.set('pen', '#e8ecff', 0.4);
+  for (let i = 0; i < 46; i++) { const x = random(w), y = random(h * 0.5); brush.line(x, y, x + 0.6, y); }
+
+  nshape(S(FAR, w, h), '#0d1424', 3);
+  nshape(S(NEAR, w, h), '#05070c', 3);
+  nshape(pines(w, h, w * 0.58, w * 0.96, h * 0.575, h * 0.66), '#020306', 1);
+  const wp = wolf(w, h);
+  nshape(wp, '#020306', 1);
+  noFill(); stroke('rgba(255,120,80,0.45)'); strokeWeight(1.5);
+  beginShape(); for (const p of wp) vertex(p[0], p[1]); endShape(CLOSE);
+}
+
+/* ---------- C 木刻 ---------- */
+function cutPanel(w, h) {
+  // 底色用原生：brush 的 wash 层会被最后合成，只画一层 wash 时会整块盖住后面的原生形状（已实测）
+  noStroke(); fill('#16263f'); rect(-2, -2, w + 4, h + 4);
+  nDisc(w * 0.72, h * 0.17, w * 0.30, '#efe6d2');
+
+  // 地面整块反白：值一翻，画面立刻硬起来（狼要整只落在白地上，露到深色天上就没了）
+  noStroke(); fill('#efe6d2'); rect(-2, h * 0.375, w + 4, h * 0.68);
+  nshape(pines(w, h, w * 0.56, w * 1.06, h * 0.645, h * 0.74), '#16263f', 1);
+  nshape(wolfAt(w, h, 0.60), '#16263f', 1);
+  noStroke(); fill('#b8342a'); rect(w * 0.02, h * 0.604, w * 0.46, h * 0.010);   // 狼脚下的朱红基线
+  // 前景深色带 + 底部朱红条
+  nshape(S([[-20, 1.05], [-20, 0.84], [0.34, 0.78], [0.66, 0.86], [1.20, 0.80], [1.20, 1.05]], w, h), '#16263f', 3);
+  nshape(S([[-20, 1.05], [-20, 0.94], [1.20, 0.94], [1.20, 1.05]], w, h), '#b8342a', 2);
+}
+
+/* ---------- 画布 ---------- */
+let frames = 0, painted = false;
+function setup() { pixelDensity(1); const c = createCanvas(W, H, WEBGL); c.parent(document.body); c.id('c'); window.__w = W; window.__h = H; }
+
+function draw() {
+  frames += 1;
+  if (!painted) {
+    painted = true;
+    background('#ded6c6');
+    randomSeed(11);
+    brush.scaleBrushes(2.6);
+    const put = (i, fn) => {
+      try { push(); translate(-W / 2, -H / 2); translate(PAD + i * (PW + GAP), PAD); fn(PW, PH); pop(); console.log('[panel ' + i + '] ok'); }
+      catch (e) { window.__err = String(e && e.message ? e.message : e); pop(); console.log('[panel ' + i + '] FAIL ' + window.__err); }
+    };
+    const panels = [inkPanel, bloodPanel, cutPanel];
+    if (ONLY >= 0) put(0, panels[ONLY]);
+    else panels.forEach((fn, i) => put(i, fn));
+  }
+  if (frames >= 3) window.__ready = true;
+}
+</script>
+</body>
+</html>

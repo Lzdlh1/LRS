@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>昼夜场景条 · 预览</title>
+<style>
+  body { margin:0; background:#14120f; color:#e8e0cf; padding:18px 18px 26px;
+         font:12px/1.6 "Segoe UI", "Microsoft YaHei", sans-serif; }
+  h2 { font-size:13px; font-weight:600; margin:0 0 8px; color:#c9c0ab; }
+  .row { display:flex; gap:18px; align-items:flex-start; }
+  .col { display:flex; flex-direction:column; gap:14px; }
+  .stage { position:relative; overflow:hidden; border-radius:6px; box-shadow:0 0 0 1px #2c2a24; }
+  .stage.desktop { width:1200px; height:520px; }
+  .stage.phone { width:360px; height:700px; }
+  .bg { position:absolute; inset:0; }
+  .bg::after {
+    content:''; position:absolute; left:0; right:0; bottom:0; width:100%; aspect-ratio:1800/220;
+    background-repeat:no-repeat; background-position:bottom center; background-size:100% auto;
+  }
+  /* 窄屏：按宽度铺会细成一条线，改成按高度铺、贴左，狼才看得见 */
+  @media (max-width: 640px) {
+    .bg::after { aspect-ratio:auto; height:20vh; background-size:auto 100%; background-position:left bottom; }
+  }
+
+  /* 夜：与 App.vue 里 .bg-night 逐层一致 */
+  .night { background:
+    radial-gradient(circle at 20% 10%, #efe6d2 0 4.4vmin, rgba(239,230,210,0) 4.4vmin),
+    radial-gradient(circle at 20% 10%, rgba(222,232,255,.2) 0%, rgba(147,164,255,.07) 18%, transparent 40%),
+    radial-gradient(1.6px 1.6px at 12% 15%, rgba(255,255,255,.7), transparent 100%),
+    radial-gradient(1.3px 1.3px at 30% 8%, rgba(255,255,255,.5), transparent 100%),
+    radial-gradient(1.7px 1.7px at 46% 21%, rgba(255,255,255,.55), transparent 100%),
+    radial-gradient(1.2px 1.2px at 62% 10%, rgba(255,255,255,.45), transparent 100%),
+    radial-gradient(1.5px 1.5px at 85% 19%, rgba(255,255,255,.5), transparent 100%),
+    radial-gradient(1.3px 1.3px at 72% 30%, rgba(255,255,255,.35), transparent 100%),
+    linear-gradient(180deg,#0a0f1a 0%,#05070c 100%); }
+  .night::after { background-image:url(/packages/web/public/art/scene-night.svg); }
+
+  /* 昼：与 App.vue 里 .bg-day 逐层一致 */
+  .day { background:
+    radial-gradient(circle at 76% 8%, #ffe9bd 0 4.4vmin, rgba(255,233,189,0) 4.4vmin),
+    radial-gradient(circle at 76% 8%, rgba(255,216,156,.28) 0%, rgba(255,196,120,.11) 20%, transparent 44%),
+    repeating-linear-gradient(104deg, rgba(255,226,176,.05) 0 2px, transparent 2px 26px),
+    linear-gradient(180deg,#2b3a55 0%,#1a2434 54%,#0f1622 100%); }
+  .day::after { background-image:url(/packages/web/public/art/scene-day.svg); }
+
+  /* 占位方块：模拟面板压在上面时背景会不会抢信息 */
+  .ui { position:absolute; z-index:3; display:flex; gap:10px; }
+  .ui .card { background:rgba(16,20,28,.82); border:1px solid rgba(200,190,160,.22);
+              border-radius:8px; padding:10px 12px; color:#d8d0bd; font-size:12px; }
+  .ui.bottom { left:0; right:0; bottom:12px; justify-content:center; }
+</style>
+</head>
+<body>
+<div class="row">
+  <div class="col">
+    <h2>夜 · 桌面 1200×520</h2>
+    <div class="stage desktop">
+      <div class="bg night"></div>
+      <div class="ui bottom">
+        <div class="card">1 号</div><div class="card">2 号</div><div class="card">3 号</div>
+        <div class="card">4 号</div><div class="card">5 号</div>
+      </div>
+    </div>
+    <h2>昼 · 桌面 1200×520</h2>
+    <div class="stage desktop">
+      <div class="bg day"></div>
+      <div class="ui bottom">
+        <div class="card">1 号</div><div class="card">2 号</div><div class="card">3 号</div>
+        <div class="card">4 号</div><div class="card">5 号</div>
+      </div>
+    </div>
+  </div>
+  <div class="col">
+    <h2>夜 · 手机 360×700</h2>
+    <div class="stage phone">
+      <div class="bg night"></div>
+      <div class="ui bottom">
+        <div class="card">1 号</div><div class="card">2 号</div>
+      </div>
+    </div>
+    <h2>昼 · 手机 360×700</h2>
+    <div class="stage phone">
+      <div class="bg day"></div>
+      <div class="ui bottom">
+        <div class="card">1 号</div><div class="card">2 号</div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

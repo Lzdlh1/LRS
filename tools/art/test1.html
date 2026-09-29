@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>诊断</title>
+<style>html,body{margin:0;padding:0;background:#222}</style>
+<script src="./node_modules/p5/lib/p5.min.js"></script>
+<script src="./node_modules/p5.brush/dist/p5.brush.js"></script>
+</head>
+<body>
+<script>
+// 目的：分清两件事
+//  A. 截图能不能抓到 WEBGL 画布  -> 看红圆（p5 原生 fill/circle）
+//  B. 笔刷层有没有 flush 到画布  -> 看绿线（p5.brush）
+let frames = 0;
+
+function setup() {
+  // pixelDensity 放在 createCanvas 之前：p5.brush 按创建时的尺寸建内部画布，
+  // 之后再改密度可能让它的目标缓冲对不上
+  pixelDensity(1);
+  createCanvas(600, 600, WEBGL);
+  window.__w = 600; window.__h = 600;
+}
+
+function draw() {
+  frames += 1;
+  if (frames === 1) {
+    background('#101418');
+
+    // A. p5 原生（WEBGL 原点在画布中心）
+    noStroke();
+    fill(200, 40, 40);
+    circle(0, 0, 160);
+
+    // B. p5.brush
+    try {
+      brush.scaleBrushes(3);
+      brush.set('HB', '#2bd07a', 6);
+      brush.line(-240, -240, 240, 240);
+      brush.set('marker', '#4a9cff', 18);
+      brush.line(-240, 240, 240, -240);
+      window.__err = null;
+    } catch (e) {
+      window.__err = String(e && e.message ? e.message : e);
+    }
+  }
+  // 故意不调用 noLoop()：先确认在正常循环下能不能出图
+  if (frames >= 3) window.__ready = true;
+}
+</script>
+</body>
+</html>

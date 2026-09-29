@@ -1,0 +1,11 @@
+{
+  "name": "lrs-art-spike",
+  "private": true,
+  "type": "module",
+  "description": "验证用：p5 + p5.brush 无头 Edge 渲染，产出水彩/水墨静帧素材",
+  "dependencies": {
+    "p5": "^2.3.3",
+    "p5.brush": "^2.2.3",
+    "puppeteer-core": "^25.11.0"
+  }
+}

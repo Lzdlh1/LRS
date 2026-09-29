@@ -26,3 +26,9 @@ data/
 .idea/
 .vscode/
 *.swp
+
+# 美术渲染工具（tools/art）：依赖、无头浏览器配置、渲染产物都不入库
+tools/art/node_modules/
+tools/art/.edge-profile/
+tools/art/.edge-cache/
+tools/art/out/

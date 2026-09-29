@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>美术试色 · 看图</title>
+<style>
+  html { background:#14120f; }
+  body { margin:0 auto; max-width:1200px; padding:24px 16px 64px; color:#e8e0cf;
+         font:14px/1.7 "Segoe UI", "Microsoft YaHei", sans-serif; }
+  h1 { font-size:19px; font-weight:600; margin:0 0 4px; }
+  .hint { color:#9a917f; margin:0 0 28px; }
+  h2 { font-size:16px; font-weight:600; margin:36px 0 10px; padding-top:18px; border-top:1px solid #2c2a24; }
+  h2 span { color:#c9552f; }
+  .row { display:flex; gap:16px; flex-wrap:wrap; }
+  figure { margin:0; }
+  figure img { display:block; width:100%; height:auto; border-radius:4px; background:#000; }
+  .w2 { flex:1 1 420px; max-width:48%; }
+  .w3 { flex:1 1 300px; max-width:32%; }
+  .w1 { flex:1 1 100%; max-width:100%; }
+  figcaption { color:#9a917f; margin-top:8px; font-size:13px; }
+</style>
+</head>
+<body>
+<h1>美术试色 · 看图</h1>
+<p class="hint">全部是 p5 + p5.brush 无头渲染出的静帧，非成图，只用来判断方向。</p>
+
+<h2>风格三选 <span>style.png</span></h2>
+<div class="row">
+  <figure class="w3">
+    <img src="out/style.png" alt="三选总览">
+    <figcaption>同一构图三调性：左 A 水墨 / 中 B 血月 / 右 C 木刻</figcaption>
+  </figure>
+  <figure class="w3">
+    <img src="out/style-b.png" alt="B 血月">
+    <figcaption>B 血月 · 830×1142（竖屏比例）</figcaption>
+  </figure>
+  <figure class="w3">
+    <img src="out/style-c.png" alt="C 木刻">
+    <figcaption>C 木刻 · 830×1142</figcaption>
+  </figure>
+</div>
+
+<h2>素材与参数联络表 <span>sheet.png</span></h2>
+<div class="row">
+  <figure class="w1">
+    <img src="out/sheet.png" alt="联络表">
+    <figcaption>2×2：夜 / 昼 / 查验卡与朱砂印 / 参数与笔刷样本</figcaption>
+  </figure>
+</div>
+
+<h2>填充对照实验 <span>wolf.png</span></h2>
+<div class="row">
+  <figure class="w1">
+    <img src="out/wolf.png" alt="填充对照">
+    <figcaption>用来定位"实色发白"：只 fill 是实心，加了 fillBleed / fillTexture 就摊薄</figcaption>
+  </figure>
+</div>
+</body>
+</html>

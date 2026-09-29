@@ -477,7 +477,8 @@ function abort(): void {
 
 .bg-night {
   background:
-    radial-gradient(circle at 19% 7%, rgba(222, 232, 255, 0.2) 0%, rgba(147, 164, 255, 0.07) 18%, transparent 40%),
+    radial-gradient(circle at 20% 10%, #efe6d2 0 4.4vmin, rgba(239, 230, 210, 0) 4.4vmin),
+    radial-gradient(circle at 20% 10%, rgba(222, 232, 255, 0.2) 0%, rgba(147, 164, 255, 0.07) 18%, transparent 40%),
     radial-gradient(1.6px 1.6px at 12% 15%, rgba(255, 255, 255, 0.7), transparent 100%),
     radial-gradient(1.3px 1.3px at 30% 8%, rgba(255, 255, 255, 0.5), transparent 100%),
     radial-gradient(1.7px 1.7px at 46% 21%, rgba(255, 255, 255, 0.55), transparent 100%),
@@ -489,9 +490,42 @@ function abort(): void {
 
 .bg-day {
   background:
-    radial-gradient(circle at 76% 6%, rgba(255, 216, 156, 0.28) 0%, rgba(255, 196, 120, 0.11) 20%, transparent 44%),
+    radial-gradient(circle at 76% 8%, #ffe9bd 0 4.4vmin, rgba(255, 233, 189, 0) 4.4vmin),
+    radial-gradient(circle at 76% 8%, rgba(255, 216, 156, 0.28) 0%, rgba(255, 196, 120, 0.11) 20%, transparent 44%),
     repeating-linear-gradient(104deg, rgba(255, 226, 176, 0.05) 0 2px, transparent 2px 26px),
     linear-gradient(180deg, #2b3a55 0%, #1a2434 54%, #0f1622 100%);
+}
+
+/*
+ * 木刻地平线（美术方向 C）：纯平涂 SVG，贴底按宽度铺。
+ * 画幅 1800×220 —— 地平线落在屏幕底部约 1/6，不跟面板抢地方。
+ * 窄屏按宽度铺会细成一条线，改成按高度铺、贴左，狼才看得见。
+ */
+.bg-night::after,
+.bg-day::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  aspect-ratio: 1800 / 220;
+  background-repeat: no-repeat;
+  background-position: bottom center;
+  background-size: 100% auto;
+  pointer-events: none;
+}
+
+.bg-night::after { background-image: url('/art/scene-night.svg'); }
+.bg-day::after { background-image: url('/art/scene-day.svg'); }
+
+@media (max-width: 640px) {
+  .bg-night::after,
+  .bg-day::after {
+    aspect-ratio: auto;
+    height: 20vh;
+    background-size: auto 100%;
+    background-position: left bottom;
+  }
 }
 
 .bar {

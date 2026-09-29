@@ -9,7 +9,7 @@
       <stop offset="1" stop-color="#a83b32"/>
     </linearGradient>
     <filter id="w-glow" x="-40%" y="-40%" width="180%" height="180%">
-      <feGaussianBlur stdDeviation="2.4" result="b"/>
+      <feGaussianBlur stdDeviation="1.8" result="b"/>
       <feMerge>
         <feMergeNode in="b"/>
         <feMergeNode in="SourceGraphic"/>
@@ -21,18 +21,22 @@
   <circle cx="60" cy="60" r="52" fill="none" stroke="url(#w-ring)" stroke-width="2.4" stroke-opacity="0.75"/>
   <circle cx="60" cy="60" r="45" fill="none" stroke="#d2554a" stroke-opacity="0.28" stroke-width="1"/>
 
-  <!-- 狼头剪影：尖耳、宽腮、收成下颌 -->
-  <path d="M29 37 L41 18 L53 31 L67 31 L79 18 L91 37 Q91 58 77 70 Q68 79 60 88 Q52 79 43 70 Q29 58 29 37 Z"
+  <!-- 正面狼头面具：全直线不画曲线（圆脸曲线 = 猫），尖耳 + 前突长吻 + 颊部锯齿鬃毛 -->
+  <path d="M22 12 L30 46 L18 55 L26 61 L17 67 L28 72 L44 70 L48 88 L48 92 L72 92 L72 88 L76 70 L92 72 L103 67 L94 61 L102 55 L90 46 L98 12 L68 30 L60 36 L52 30 Z"
         fill="#1b1013" stroke="#d2554a" stroke-width="2.4" stroke-linejoin="round"/>
   <!-- 耳内 -->
-  <path d="M42 26 L48 35 L38 36 Z" fill="#d2554a" fill-opacity="0.32"/>
-  <path d="M78 26 L72 35 L82 36 Z" fill="#d2554a" fill-opacity="0.32"/>
-  <!-- 发光的眼 -->
+  <path d="M28 22 L33 42 L46 32 Z" fill="#d2554a" fill-opacity="0.3"/>
+  <path d="M92 22 L87 42 L74 32 Z" fill="#d2554a" fill-opacity="0.3"/>
+  <!-- 吻部中脊 -->
+  <path d="M60 40 V84" stroke="#d2554a" stroke-width="1.4" stroke-opacity="0.28"/>
+  <!-- 眼：斜切缝（越"睁眼圆"越像猫） -->
   <g filter="url(#w-glow)">
-    <path d="M46 49 L58 52.5 L46 56 Z" fill="#ffd9d4"/>
-    <path d="M74 49 L62 52.5 L74 56 Z" fill="#ffd9d4"/>
+    <path d="M32 54 L50 48 L52.5 52.5 L34.5 58.5 Z" fill="#ffd9d4"/>
+    <path d="M88 54 L70 48 L67.5 52.5 L85.5 58.5 Z" fill="#ffd9d4"/>
   </g>
-  <!-- 鼻与口 -->
-  <path d="M60 63 l-4.5 5 4.5 4 4.5 -4 Z" fill="#d2554a" fill-opacity="0.55"/>
-  <path d="M52 78 q8 6 16 0" fill="none" stroke="#d2554a" stroke-width="1.8" stroke-linecap="round" stroke-opacity="0.85"/>
+  <!-- 鼻 -->
+  <path d="M54 80 L66 80 L60 89 Z" fill="#d2554a" fill-opacity="0.6"/>
+  <!-- 獠牙 -->
+  <path d="M47 78 l5.5 0 l-2.6 10 Z" fill="#ffe8e4"/>
+  <path d="M67.5 78 l5.5 0 l-2.9 10 Z" fill="#ffe8e4"/>
 </svg>

@@ -102,13 +102,13 @@ function main(): void {
     isAiLive: () => llm.live,
     admin,
     accessTokenOf: tokenOf,
-    // 正式玩法默认就是玩家视角；想看全场底牌用界面右上角的开关切到上帝视角
-    defaultViewer: 1,
-    hostFactory: ({ seatCount, names, onSpeechDelta, onDecision }) =>
+    // 正式玩法默认就是玩家视角（位次每局随机，所以跟着房间走）；想看全场底牌用折叠栏里的开关切到上帝视角
+    defaultViewer: 'human',
+    hostFactory: ({ seatCount, names, humanSeat, onSpeechDelta, onDecision }) =>
       createAgentHost({
         router: llm.router,
         logger: logging.agent,
-        humanSeats: [1],
+        humanSeats: [humanSeat],
         seatCount,
         names,
         enableReflection: config.llm.reflection,

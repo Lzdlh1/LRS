@@ -54,10 +54,11 @@ watch(() => liveText.value.length, scrollToBottom);
 </template>
 
 <style scoped>
+/* 中间这块是整个界面最值得给面积的地方：文字局全靠读它 */
 .log {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-width: 0;
-  min-height: 160px;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: linear-gradient(180deg, rgba(20, 25, 36, 0.9) 0%, rgba(14, 18, 27, 0.9) 100%);
@@ -97,6 +98,7 @@ watch(() => liveText.value.length, scrollToBottom);
 
 .log-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 8px 12px 12px;
   display: flex;

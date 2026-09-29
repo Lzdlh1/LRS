@@ -81,11 +81,11 @@ async function startWithAi(): Promise<number> {
     logger,
     wsLogger: logger,
     store: null,
-    hostFactory: ({ seatCount, names, onSpeechDelta }) =>
+    hostFactory: ({ seatCount, names, humanSeat, onSpeechDelta }) =>
       createAgentHost({
         router,
         logger,
-        humanSeats: [1],
+        humanSeats: [humanSeat],
         seatCount,
         names,
         rng: () => 0.42,
@@ -101,10 +101,13 @@ async function startWithAi(): Promise<number> {
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** 真人只负责「轮到 1 号时点一下第一个按钮」，其余全交给 AI */
+/**
+ * 真人只负责「轮到自己时点一下第一个按钮」，其余全交给 AI。
+ *
+ * 位次每局随机，所以真人坐哪不写死 —— 从服务端下发的 humanSeat 里读。
+ */
 async function playWithAi(
   port: number,
-  humanSeat: number,
   timeoutMs = 60_000,
 ): Promise<{
   state: ClientState | null;
@@ -145,7 +148,7 @@ async function playWithAi(
     latest = message.state;
     events.push(...message.events);
 
-    if (latest.winner !== null || latest.pending?.seat !== humanSeat) return;
+    if (latest.winner !== null || latest.pending?.seat !== latest.humanSeat) return;
 
     const pending = latest.pending;
     const choice = choicesFor(pending)[0];
@@ -167,14 +170,16 @@ async function playWithAi(
 describe('AI 接管对局', () => {
   it('8 个 AI 自动行动，真人只点几下就能打完一整局', async () => {
     const port = await startWithAi();
-    const { state, events } = await playWithAi(port, 1);
+    const { state, events } = await playWithAi(port);
 
     expect(state).not.toBeNull();
     expect(['wolf', 'good']).toContain(state?.winner);
     expect(state?.pending).toBeNull();
 
     // AI 真的发了言
-    const aiSpeech = events.filter((event) => event.payload.t === 'spoke' && event.payload.seat !== 1);
+    const aiSpeech = events.filter(
+      (event) => event.payload.t === 'spoke' && event.payload.seat !== state?.humanSeat,
+    );
     expect(aiSpeech.length).toBeGreaterThan(3);
 
     // 全程没有出现非法行动
@@ -186,7 +191,7 @@ describe('AI 接管对局', () => {
 
   it('引擎给出的待办会轮流落到 AI 座位上，而不是只由真人推进', async () => {
     const port = await startWithAi();
-    const { state, events } = await playWithAi(port, 1, 30_000);
+    const { state, events } = await playWithAi(port, 30_000);
 
     const requested = new Set(
       events
@@ -202,7 +207,7 @@ describe('AI 接管对局', () => {
 
   it('AI 发言以增量片段流式推给前端，且与最终落地文本一致', async () => {
     const port = await startWithAi();
-    const { events, streams, streamDone } = await playWithAi(port, 1, 60_000);
+    const { events, streams, streamDone } = await playWithAi(port, 60_000);
 
     expect(streams.length).toBeGreaterThan(0);
     expect(streamDone.length).toBeGreaterThan(0);

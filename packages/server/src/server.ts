@@ -143,8 +143,8 @@ export interface StartServerOptions {
    * 立刻生效，不需要重启。
    */
   accessTokenOf?: () => string;
-  /** 新连接的默认视角。默认上帝视角方便开发调试，M4 会改成玩家视角。 */
-  defaultViewer?: 'god' | number;
+  /** 新连接的默认视角。'human' = 跟着本局真人的座位走（位次每局随机）。 */
+  defaultViewer?: 'god' | number | 'human';
 }
 
 export interface RunningServer {
@@ -162,6 +162,10 @@ export function startServer(options: StartServerOptions): RunningServer {
     store,
     hostFactory: options.hostFactory,
   });
+
+  /** 每次连接现算：新开一局会重抽真人位次，视角得跟着走 */
+  const resolveViewer = (): 'god' | number =>
+    defaultViewer === 'human' ? room.humanSeatId : defaultViewer;
   let channelSeq = 0;
   const serveWeb = createWebHandler(config.webDir);
   /** 每次现取：设置页改完口令立刻生效 */
@@ -197,7 +201,7 @@ export function startServer(options: StartServerOptions): RunningServer {
         roomId: room.roomId,
         subscribers: room.subscriberCount,
         ai: options.isAiLive?.() ?? false,
-        defaultViewer,
+        defaultViewer: resolveViewer(),
         web: serveWeb !== null,
         uptimeSeconds: Math.round(process.uptime()),
       });
@@ -227,11 +231,12 @@ export function startServer(options: StartServerOptions): RunningServer {
   wss.on('connection', (socket: WebSocket) => {
     channelSeq += 1;
     const channel = `c${channelSeq}`;
-    wsLogger.info('连接建立', { channel, viewer: defaultViewer });
+    const viewer = resolveViewer();
+    wsLogger.info('连接建立', { channel, viewer });
 
     room.subscribe({
       id: channel,
-      viewer: defaultViewer,
+      viewer,
       send: (message: ServerMessage) => {
         if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message));
       },

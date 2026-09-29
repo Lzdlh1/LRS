@@ -11,11 +11,7 @@ const props = defineProps<{
   error: string | null;
 }>();
 
-const emit = defineEmits<{
-  send: [action: Action];
-  auto: [count: number];
-  newGame: [];
-}>();
+const emit = defineEmits<{ send: [action: Action] }>();
 
 const speech = ref('');
 
@@ -30,6 +26,14 @@ const frozen = computed(() => paused.value || stopped.value);
 /** 玩家视角下，如果不是轮到自己，选项会是空的 */
 const observing = computed(() => pending.value !== null && pending.value.options.length === 0);
 const mine = computed(() => pending.value !== null && pending.value.options.length > 0);
+
+/** 需要选目标的动作统一改成「点头像」，这里只留不需要选人的那些按钮 */
+const seatChoiceCount = computed(
+  () => choices.value.filter((choice) => typeof (choice.action as { target?: unknown }).target === 'number').length,
+);
+const plainChoices = computed(() =>
+  choices.value.filter((choice) => typeof (choice.action as { target?: unknown }).target !== 'number'),
+);
 
 watch(pending, () => {
   speech.value = '';
@@ -49,11 +53,11 @@ function submitSpeech(): void {
     <div class="status">
       <template v-if="stopped">
         <span class="tag danger">本局已中止</span>
-        <span class="dim">点「新开一局」重来</span>
+        <span class="dim">在 ☰ 里点「新开一局」重来</span>
       </template>
       <template v-else-if="isOver">
         <span class="tag success">{{ state?.winner === 'wolf' ? '狼人胜' : '好人胜' }}</span>
-        <span class="dim">对局已结束，可以点「新开一局」再来一把</span>
+        <span class="dim">对局已结束，可以在 ☰ 里新开一局</span>
       </template>
       <template v-else-if="paused">
         <span class="tag warn">已暂停</span>
@@ -69,6 +73,9 @@ function submitSpeech(): void {
         <span class="dim">等待服务端推进…</span>
       </template>
 
+      <span v-if="state?.witchPotions" class="tag potion">
+        🧪 解药 {{ state.witchPotions.antidote }} · 毒药 {{ state.witchPotions.poison }}
+      </span>
       <span v-if="!connected" class="tag danger">未连接</span>
       <span v-if="error" class="tag danger">{{ error }}</span>
     </div>
@@ -84,22 +91,21 @@ function submitSpeech(): void {
         <button class="primary send" :disabled="!speech.trim()" @click="submitSpeech">发送</button>
       </div>
 
-      <div v-if="choices.length > 0" class="choices">
-        <button v-for="choice in choices" :key="choice.key" @click="emit('send', choice.action)">
+      <!-- 要选人的动作不再铺一屏按钮：直接点两边的头像，既看得清是谁也省地方 -->
+      <div v-if="seatChoiceCount > 0" class="pick-hint">
+        <span class="dot" />
+        点两边闪光的头像选目标（{{ seatChoiceCount }} 个可选）
+      </div>
+
+      <div v-if="plainChoices.length > 0" class="choices">
+        <button v-for="choice in plainChoices" :key="choice.key" @click="emit('send', choice.action)">
           {{ choice.label }}
         </button>
       </div>
 
       <div v-else-if="observing" class="dim hint">
-        当前是玩家视角，看不到别人的可选行动。需要代打时切到「上帝视角」。
+        当前是玩家视角，看不到别人的可选行动。需要代打时在 ☰ 里切到「上帝视角」。
       </div>
-    </div>
-
-    <div class="debug">
-      <span class="debug-label">调试</span>
-      <button class="ghost tiny" :disabled="isOver || frozen" @click="emit('auto', 1)">代打一步</button>
-      <button class="ghost tiny" :disabled="isOver || frozen" @click="emit('auto', 30)">代打 30 步</button>
-      <button class="ghost tiny" @click="emit('newGame')">新开一局</button>
     </div>
   </footer>
 </template>
@@ -107,24 +113,25 @@ function submitSpeech(): void {
 <style scoped>
 .panel {
   flex: none;
-  border-top: 1px solid var(--line);
   background: linear-gradient(180deg, rgba(18, 22, 31, 0.96) 0%, rgba(10, 13, 20, 0.96) 100%);
   backdrop-filter: blur(8px);
-  padding: 11px 14px 13px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  padding: 9px 11px 11px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .status {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
 .tag {
-  padding: 3px 11px;
+  padding: 3px 10px;
   border-radius: 999px;
   background: var(--panel-2);
   border: 1px solid var(--line-2);
@@ -157,6 +164,12 @@ function submitSpeech(): void {
   color: var(--danger);
 }
 
+.tag.potion {
+  background: rgba(88, 211, 166, 0.1);
+  border-color: rgba(88, 211, 166, 0.4);
+  color: var(--jade);
+}
+
 .dim {
   color: var(--text-dim);
   font-size: 11.5px;
@@ -165,7 +178,7 @@ function submitSpeech(): void {
 .body {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .speech {
@@ -191,37 +204,42 @@ function submitSpeech(): void {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
   gap: 7px;
-  max-height: 148px;
+  max-height: 132px;
   overflow-y: auto;
 }
 
-.hint {
-  padding: 4px 0;
-}
-
-.debug {
+.pick-hint {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding-top: 9px;
-  border-top: 1px dashed #232a3a;
-  flex-wrap: wrap;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  background: rgba(147, 164, 255, 0.09);
+  border: 1px dashed rgba(147, 164, 255, 0.45);
+  color: #b3c0ff;
+  font-size: 12px;
 }
 
-.debug-label {
-  font-size: 10.5px;
-  letter-spacing: 0.18em;
-  color: var(--text-faint);
+.dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: hint-pulse 1.4s ease-in-out infinite;
 }
 
-button.tiny {
-  padding: 4px 9px;
-  min-height: 26px;
-  font-size: 11px;
-  opacity: 0.75;
+@keyframes hint-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(147, 164, 255, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(147, 164, 255, 0);
+  }
 }
 
-button.tiny:hover:not(:disabled) {
-  opacity: 1;
+.hint {
+  padding: 2px 0;
 }
 </style>

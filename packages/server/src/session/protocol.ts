@@ -30,6 +30,8 @@ export interface ClientState {
   day: number;
   phase: Phase;
   viewer: Viewer;
+  /** 本局真人坐哪个座位。每局随机，视角开关要跟着它走，不能写死 1 号 */
+  humanSeat: SeatId;
   seats: ClientSeat[];
   chief: {
     elected: SeatId | null;
@@ -160,6 +162,8 @@ export interface ProjectArgs {
   gameId: string;
   state: GameState;
   viewer: Viewer;
+  /** 本局真人所在的座位 */
+  humanSeat: SeatId;
   /** 当前待办的绝对到期时间戳；无待办则为 0 */
   deadlineAt: number;
   paused: boolean;
@@ -177,6 +181,7 @@ export function projectState({
   gameId,
   state,
   viewer,
+  humanSeat,
   deadlineAt,
   paused,
   stopped,
@@ -213,6 +218,7 @@ export function projectState({
     day: state.day,
     phase: state.phase,
     viewer,
+    humanSeat,
     seats,
     chief: {
       elected: state.chief.elected,

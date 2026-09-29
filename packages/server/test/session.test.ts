@@ -74,6 +74,40 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe('随机位次', () => {
+  it('每局重抽座位，下发的状态里带着这一局的座位', () => {
+    const room = new GameRoom({ logger, store: null });
+    rooms.push(room);
+    const god = collector();
+    god.subscribe(room, 'god', 'god');
+
+    const seen = new Set<SeatId>();
+    for (let i = 0; i < 40; i += 1) {
+      seen.add(room.humanSeatId);
+      room.newGame();
+    }
+
+    expect(seen.size, `40 局只抽到过 ${[...seen].join('/')} 号，位次没有在随机`).toBeGreaterThan(1);
+    for (const seat of seen) {
+      expect(seat).toBeGreaterThanOrEqual(1);
+      expect(seat).toBeLessThanOrEqual(9);
+    }
+
+    const state = god.state();
+    expect(state.humanSeat).toBe(room.humanSeatId);
+    expect(state.seats.find((seat) => seat.seat === room.humanSeatId)?.isHuman).toBe(true);
+  });
+
+  it('固定种子依然能复现：同一种子抽到同一座位', () => {
+    const a = new GameRoom({ logger, store: null, id: 'a' });
+    const b = new GameRoom({ logger, store: null, id: 'b' });
+    rooms.push(a, b);
+    a.newGame(2468);
+    b.newGame(2468);
+    expect(a.humanSeatId).toBe(b.humanSeatId);
+  });
+});
+
 describe('信息裁剪', () => {
   it('上帝视角能看到全部身份与药水', () => {
     const { room } = makeRoom();
@@ -366,8 +400,8 @@ describe('玩家视角的信息边界', () => {
 
 describe('复盘', () => {
   /** 假 AI：只负责产出动作并回报一条决策，用来验证复盘链路 */
-  function replayFactory(humanSeat: SeatId): AgentHostFactory {
-    return ({ onDecision }) =>
+  function replayFactory(): AgentHostFactory {
+    return ({ onDecision, humanSeat }) =>
       ({
         observe: (): void => {},
         handles: (seat: SeatId): boolean => seat !== humanSeat,
@@ -396,7 +430,7 @@ describe('复盘', () => {
   }
 
   it('局中封存推理依据与底牌，事件仍按视角裁剪', async () => {
-    const room = new GameRoom({ logger, store: null, hostFactory: replayFactory(1) });
+    const room = new GameRoom({ logger, store: null, hostFactory: replayFactory() });
     rooms.push(room);
 
     const god = collector();
@@ -407,7 +441,7 @@ describe('复盘', () => {
     for (let i = 0; i < 60 && humanTurns < 2; i += 1) {
       const pending = god.state().pending;
       if (!pending) break;
-      if (pending.seat === 1) {
+      if (pending.seat === room.humanSeatId) {
         const action = driveAction(pending);
         if (!action) break;
         room.submit(action, 'client');
@@ -581,22 +615,23 @@ describe('暂停与中止', () => {
 });
 
 /** 只记录调用时序的假 AI；真实 AI 的接线由 ai.test.ts 覆盖 */
-function timingHost(options: { delayMs: number; humanSeat: SeatId }) {
+function timingHost(options: { delayMs: number }) {
   const calls: { seat: SeatId; kind: string; at: number }[] = [];
-  const host = {
-    observe: (): void => {},
-    handles: (seat: SeatId): boolean => seat !== options.humanSeat,
-    act: async (_state: unknown, pending: PendingRequest): Promise<Action> => {
-      calls.push({ seat: pending.seat, kind: pending.options[0]?.kind ?? '?', at: Date.now() });
-      await new Promise((resolve) => setTimeout(resolve, options.delayMs));
-      const choice = choicesFor(pending)[0];
-      // 发言不生成按钮，假 AI 自己编一句
-      if (!choice) return { kind: 'speak', actor: pending.seat, text: `（假 AI）${pending.seat} 号发言` };
-      return choice.action;
-    },
-  };
+  const factory: AgentHostFactory = ({ humanSeat }) =>
+    ({
+      observe: (): void => {},
+      handles: (seat: SeatId): boolean => seat !== humanSeat,
+      act: async (_state: unknown, pending: PendingRequest): Promise<Action> => {
+        calls.push({ seat: pending.seat, kind: pending.options[0]?.kind ?? '?', at: Date.now() });
+        await new Promise((resolve) => setTimeout(resolve, options.delayMs));
+        const choice = choicesFor(pending)[0];
+        // 发言不生成按钮，假 AI 自己编一句
+        if (!choice) return { kind: 'speak', actor: pending.seat, text: `（假 AI）${pending.seat} 号发言` };
+        return choice.action;
+      },
+    }) as unknown as AgentHost;
   // AgentHost 带私有字段，结构类型无法直接赋值，测试里显式转换
-  return { host: host as unknown as AgentHost, calls };
+  return { factory, calls };
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -626,17 +661,18 @@ function driveAction(pending: PendingRequest): Action | null {
 
 describe('并行预思考', () => {
   it('轮到真人时 8 个 AI 已并行想完，真人一点后面立刻过完', async () => {
-    const { host, calls } = timingHost({ delayMs: 80, humanSeat: 1 });
-    const room = new GameRoom({ logger, store: null, hostFactory: () => host });
+    const { factory, calls } = timingHost({ delayMs: 80 });
+    const room = new GameRoom({ logger, store: null, hostFactory: factory });
     rooms.push(room);
 
     const god = collector();
     god.subscribe(room, 'god', 'god');
 
-    // 先把首夜走完，走到上警阶段
-    for (let i = 0; i < 60; i += 1) {
+    // 先把首夜走完，一直走到「轮到真人上警」为止（位次随机，所以要看座位号）
+    for (let i = 0; i < 80; i += 1) {
       const pending = god.state().pending;
-      if (!pending || pending.options[0]?.kind === 'chief_signup') break;
+      if (!pending) break;
+      if (pending.options[0]?.kind === 'chief_signup' && pending.seat === room.humanSeatId) break;
       const action = humanAction(pending);
       if (!action) break;
       room.submit(action, 'client');
@@ -644,11 +680,13 @@ describe('并行预思考', () => {
 
     const pending = god.state().pending;
     expect(pending?.options[0]?.kind).toBe('chief_signup');
-    expect(pending?.seat).toBe(1);
+    expect(pending?.seat).toBe(room.humanSeatId);
 
-    // 关键断言：真人（1 号）还一个字没回，2~9 号的决策已经全部发出去了
+    // 关键断言：真人还一个字没回，其余 8 个座位的决策已经全部发出去了
     const signupCalls = calls.filter((call) => call.kind === 'chief_signup');
-    expect(signupCalls.map((call) => call.seat).sort((a, b) => a - b)).toEqual([2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(signupCalls.map((call) => call.seat).sort((a, b) => a - b)).toEqual(
+      [1, 2, 3, 4, 5, 6, 7, 8, 9].filter((seat) => seat !== room.humanSeatId),
+    );
 
     const spread = Math.max(...signupCalls.map((call) => call.at)) - Math.min(...signupCalls.map((call) => call.at));
     expect(spread, `8 次决策发起时间跨度为 ${spread}ms，若串行发起会超过 600ms`).toBeLessThan(200);
@@ -660,8 +698,8 @@ describe('并行预思考', () => {
   });
 
   it('发言阶段不做预思考：同时只会有一个人在发言决策上', async () => {
-    const { host, calls } = timingHost({ delayMs: 40, humanSeat: 1 });
-    const room = new GameRoom({ logger, store: null, hostFactory: () => host });
+    const { factory, calls } = timingHost({ delayMs: 40 });
+    const room = new GameRoom({ logger, store: null, hostFactory: factory });
     rooms.push(room);
 
     const god = collector();
@@ -671,7 +709,7 @@ describe('并行预思考', () => {
     for (let i = 0; i < 200; i += 1) {
       const pending = god.state().pending;
       if (!pending || god.state().winner !== null) break;
-      if (pending.options[0]?.kind === 'speak' && pending.seat !== 1) break;
+      if (pending.options[0]?.kind === 'speak' && pending.seat !== room.humanSeatId) break;
       const action = humanAction(pending);
       if (!action) break;
       room.submit(action, 'client');

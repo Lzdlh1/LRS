@@ -4,6 +4,7 @@ import {
   choicesFor,
   concurrentBatch,
   createGame,
+  DEFAULT_BOARD,
   eventsFor,
   needsSpeech,
   pendingRequest,
@@ -37,6 +38,8 @@ export interface Subscriber {
 export type AgentHostFactory = (input: {
   seatCount: number;
   names: string[];
+  /** 本局真人坐哪个座位 —— AI 要绕开它思考 */
+  humanSeat: SeatId;
   /** AI 发言的增量片段，房间负责转发给前端 */
   onSpeechDelta: (seat: SeatId, delta: string) => void;
   /** 每次决策完成，房间负责记下来供复盘 */
@@ -101,6 +104,13 @@ export class GameRoom {
   private paused = false;
   /** 中止：终态，不再有任何推进，只能新开一局 */
   private stopped = false;
+  /**
+   * 本局真人坐哪个座位。
+   *
+   * 每局随机重抽 —— 固定坐 1 号会让「1 号必是真人」变成一条公开信息，
+   * 狼人（AI）据此就能反推出身份分布。视角、待办判断都要读它，不能写死 1。
+   */
+  private humanSeat: SeatId = 1;
 
   constructor(options: GameRoomOptions) {
     this.roomId = options.id ?? randomUUID();
@@ -117,6 +127,11 @@ export class GameRoom {
   /** 当前这一局的 id（重开一局会变） */
   get gameId(): string {
     return this.currentGameId;
+  }
+
+  /** 本局真人的座位（重开一局会变） */
+  get humanSeatId(): SeatId {
+    return this.humanSeat;
   }
 
   // ── 订阅 ──
@@ -274,9 +289,14 @@ export class GameRoom {
   newGame(seed?: number): void {
     this.clearTimer();
     this.currentGameId = randomUUID();
+    const previousSeat = this.humanSeat;
     this.state = this.startNewGame(seed);
     this.armTimer();
-    for (const subscriber of this.subscribers.values()) this.sendSnapshot(subscriber, 0);
+    for (const subscriber of this.subscribers.values()) {
+      // 位次每局重抽，真人视角要跟着挪到新座位，否则会莫名其妙看到别人的牌
+      if (subscriber.viewer === previousSeat) subscriber.viewer = this.humanSeat;
+      this.sendSnapshot(subscriber, 0);
+    }
     this.scheduleAi();
   }
 
@@ -298,13 +318,16 @@ export class GameRoom {
     this.decisions = [];
 
     const rng = seed === undefined ? Math.random : mulberry32(seed);
-    const result = createGame({ humanSeats: [1], rules: this.rules, rng });
+    // 位次每局重抽：先抽座位，再抽牌 —— 固定种子依然能完整复现一局
+    this.humanSeat = 1 + Math.floor(rng() * DEFAULT_BOARD.seatCount);
+    const result = createGame({ humanSeats: [this.humanSeat], rules: this.rules, rng });
     this.history.push(...result.events);
 
     this.logger.info('新对局开始', {
       gameId: this.currentGameId,
       board: result.state.board.name,
       seed: seed ?? null,
+      humanSeat: this.humanSeat,
       day: result.state.day,
       phase: result.state.phase,
       aiSeats: this.hostFactory ? result.state.players.filter((p) => !p.isHuman).length : 0,
@@ -316,6 +339,7 @@ export class GameRoom {
       ? this.hostFactory({
           seatCount: result.state.board.seatCount,
           names: result.state.players.map((player) => player.name),
+          humanSeat: this.humanSeat,
           onSpeechDelta: (seat, delta) => this.broadcastStream(seat, delta),
           onDecision: (entry) => this.recordDecision(entry),
         })
@@ -327,7 +351,7 @@ export class GameRoom {
         this.store.createGame({
           id: this.gameId,
           board: result.state.board.name,
-          configJson: JSON.stringify({ humanSeats: [1], seed: seed ?? null }),
+          configJson: JSON.stringify({ humanSeats: [this.humanSeat], seed: seed ?? null }),
           startedAt: new Date().toISOString(),
           endedAt: null,
           winner: null,
@@ -629,6 +653,7 @@ export class GameRoom {
       gameId: this.gameId,
       state: this.state,
       viewer,
+      humanSeat: this.humanSeat,
       deadlineAt: this.deadlineAt,
       paused: this.paused,
       stopped: this.stopped,

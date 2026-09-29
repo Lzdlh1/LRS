@@ -10,6 +10,14 @@ import { openDatabase } from './store/db.ts';
 import { GameStore } from './store/gameStore.ts';
 import { SettingsStore } from './store/settingsStore.ts';
 
+/**
+ * 夜间每一步的固定时长。
+ *
+ * 这是本局「节奏」的总开关：一夜 = 4 × 这个数（守 → 刀 → 药 → 验）。
+ * 定得比 AI 一次决策（通常 2~4 秒）宽一些，否则慢的调用会被节拍切掉。
+ */
+const NIGHT_STEP_MS = 10_000;
+
 function main(): void {
   const config = loadConfig();
   const logging = createLogging(config);
@@ -104,6 +112,9 @@ function main(): void {
     accessTokenOf: tokenOf,
     // 正式玩法默认就是玩家视角（位次每局随机，所以跟着房间走）；想看全场底牌用折叠栏里的开关切到上帝视角
     defaultViewer: 'human',
+    // 夜间固定节拍：守→刀→药→验四步永远都走，每步走满 NIGHT_STEP_MS 才换步，
+    // 行动者提前提交也不提前换步 —— 这样「走到第几步」是公开的，而「这一步有没有人动」看不出来
+    rules: { nightStepMs: NIGHT_STEP_MS },
     hostFactory: ({ seatCount, names, humanSeat, onSpeechDelta, onDecision }) =>
       createAgentHost({
         router: llm.router,

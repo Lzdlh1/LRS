@@ -1,5 +1,12 @@
 import { ROLE_LABELS, type GameEvent } from '@lrs/shared';
-import { DEATH_CAUSE_LABELS, PHASE_LABELS, SPEECH_CONTEXT_LABELS, seatLabel } from './labels';
+import {
+  DEATH_CAUSE_LABELS,
+  isNightPhase,
+  nightStepLabel,
+  PHASE_LABELS,
+  SPEECH_CONTEXT_LABELS,
+  seatLabel,
+} from './labels';
 
 export type Tone = 'muted' | 'normal' | 'highlight' | 'danger' | 'success' | 'private';
 
@@ -113,12 +120,19 @@ export function formatEvent(event: GameEvent): EventLine {
       };
     }
 
-    case 'phase_changed':
+    case 'phase_changed': {
+      // 夜间四步永远都走且步长固定，所以这里可以写清「第几步、谁在行动」——
+      // 顺序本来就是公开的，看得出步骤也推不出谁还活着
+      const to = event.payload.to;
+      const label = isNightPhase(to)
+        ? `夜晚 · ${nightStepLabel(to)}`
+        : PHASE_LABELS[to];
       return {
         ...base,
-        tone: event.payload.to === 'GAME_OVER' ? 'success' : 'muted',
-        text: `—— 第 ${event.day} 天 · ${PHASE_LABELS[event.payload.to]} ——`,
+        tone: to === 'GAME_OVER' ? 'success' : 'muted',
+        text: `—— 第 ${event.day} 天 · ${label} ——`,
       };
+    }
 
     case 'action_requested':
       return { ...base, tone: 'highlight', text: `轮到 ${seatLabel(event.payload.seat)}行动` };

@@ -126,6 +126,17 @@ export interface GameState {
   /** 死亡的警长若尚未决定警徽去向，这里记着他是谁 */
   pendingChiefTransfer: SeatId | null;
   pending: PendingRequest | null;
+  /**
+   * 夜间那一步的节拍状态（见 Rules.nightStepMs）。
+   *
+   * - `idle`：不在等节拍（白天，或夜里刚进这一步还没走完）
+   * - `open`：这一步该做的都做完了，但**按住不换步**，等会话服务的「到点了」
+   * - `beaten`：这一步的节拍已经到过，可以换下一步了
+   *
+   * 三态是必须的：只有两态的话，敲完节拍再进一次同一个阶段函数，
+   * 它会以为自己该继续等，于是整局卡在夜里那一步。
+   */
+  nightBeat: 'idle' | 'open' | 'beaten';
   winner: Camp | null;
 }
 

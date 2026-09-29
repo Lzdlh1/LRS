@@ -70,6 +70,17 @@ export interface Rules {
   /** 平票 PK 后再次平票则本轮无人出局 */
   tieMeansNoElimination: boolean;
 
+  // ── 夜间节拍 ──
+  /**
+   * 夜间每一步的固定时长；0 = 关掉（行动者一提交就换步）。
+   *
+   * 打开之后：守卫→狼人→女巫→预言家四步**永远都走**（该角色出局也照走），
+   * 每步走满这个时长才换步，**行动者提前提交也不提前换步**。
+   * 这两条合起来才是「知道走到第几步、但看不出这一步有没有人动」——
+   * 否则步数变少、或某一步只用了两秒，都能反推出那个角色还活着。
+   */
+  nightStepMs: number;
+
   // ── 时限（相对时限，引擎不持有真实时间）──
   timeoutMs: TimeoutRules;
 }
@@ -109,6 +120,9 @@ export const DEFAULT_RULES: Rules = {
   wolfKillTakesPriority: true,
   tieMeansNoElimination: true,
 
+  // 默认关掉：纯引擎跑局时「提交即换步」最省事，产品端（会话服务）会打开它
+  nightStepMs: 0,
+
   timeoutMs: DEFAULT_TIMEOUT_MS,
 };
 
@@ -135,6 +149,9 @@ export function validateRules(rules: Rules): string[] {
   }
   if (rules.witchAntidoteCount < 0 || rules.witchPoisonCount < 0) {
     errors.push('女巫药水数量不能为负');
+  }
+  if (!Number.isFinite(rules.nightStepMs) || rules.nightStepMs < 0) {
+    errors.push(`夜间节拍 ${rules.nightStepMs} 不合法，应为 0（关闭）或正数毫秒`);
   }
   for (const [key, value] of Object.entries(rules.timeoutMs)) {
     if (!Number.isFinite(value) || value <= 0) {

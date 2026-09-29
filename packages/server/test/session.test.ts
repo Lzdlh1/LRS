@@ -703,6 +703,50 @@ describe('重大信息等真人确认', () => {
   });
 });
 
+describe('夜间固定节拍', () => {
+  /** 打开节拍的房间：只有节拍能推动夜晚，正好用来验「换步与有没有人行动无关」 */
+  function beatRoom(stepMs: number): { room: GameRoom; god: Collector } {
+    const room = new GameRoom({ logger, store: null, id: 'beat-room', rules: { nightStepMs: stepMs } });
+    rooms.push(room);
+    const god = collector();
+    god.subscribe(room, 'god', 'god');
+    return { room, god };
+  }
+
+  it('四步固定走满：没人行动也一步不少、一步不早', () => {
+    vi.useFakeTimers();
+    const { god } = beatRoom(1000);
+
+    expect(god.state().phase).toBe('NIGHT_GUARD');
+    expect(god.state().nightStepLeftMs, '倒计时下发给了所有人').toBe(1000);
+
+    // 差 1 毫秒都还没到点
+    vi.advanceTimersByTime(999);
+    expect(god.state().phase).toBe('NIGHT_GUARD');
+    vi.advanceTimersByTime(1);
+    expect(god.state().phase).toBe('NIGHT_WOLF');
+
+    const phases: string[] = [god.state().phase];
+    for (let i = 0; i < 3; i += 1) {
+      vi.advanceTimersByTime(1000);
+      phases.push(god.state().phase);
+    }
+
+    // 全程没人行动，四步依然一步不落地走完，然后进白天
+    expect(phases).toEqual(['NIGHT_WOLF', 'NIGHT_WITCH', 'NIGHT_SEER', 'CHIEF_SIGNUP']);
+    expect(god.state().nightStepLeftMs, '出了夜晚就没有这一步的倒计时了').toBe(0);
+  });
+
+  it('节拍关着时不排节拍，也不下发倒计时', () => {
+    const room = new GameRoom({ logger, store: null, id: 'no-beat' });
+    rooms.push(room);
+    const god = collector();
+    god.subscribe(room, 'god', 'god');
+
+    expect(god.state().nightStepLeftMs).toBe(0);
+  });
+});
+
 /** 只记录调用时序的假 AI；真实 AI 的接线由 ai.test.ts 覆盖 */
 function timingHost(options: { delayMs: number }) {
   const calls: { seat: SeatId; kind: string; at: number }[] = [];

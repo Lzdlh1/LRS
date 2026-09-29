@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { choicesFor, type ActionChoice } from '@lrs/core-engine';
 import { ROLE_LABELS, type Action, type Phase } from '@lrs/shared';
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import ActionPanel from './components/ActionPanel.vue';
 import EventLog from './components/EventLog.vue';
 import InfoCard from './components/InfoCard.vue';
@@ -11,7 +11,14 @@ import SettingsPanel from './components/SettingsPanel.vue';
 import StageOverlay from './components/StageOverlay.vue';
 import UsagePanel from './components/UsagePanel.vue';
 import { formatEvent, buildAckCard, type EventLine } from './format';
-import { isNightPhase, PHASE_LABELS } from './labels';
+import {
+  isNightPhase,
+  nightStepIndex,
+  nightStepLabel,
+  NIGHT_STEP_NAMES,
+  NIGHT_STEPS,
+  PHASE_LABELS,
+} from './labels';
 import { deriveMarks } from './marks';
 import { useGameSocket } from './ws';
 
@@ -36,36 +43,21 @@ const {
 
 onMounted(connect);
 
-const lines = computed<EventLine[]>(() => {
-  const out: EventLine[] = [];
-  let nightShown = false;
-
-  for (const event of events.value) {
-    const payload = event.payload;
-
-    // 夜里走到哪一步是致命信息：引擎会在该角色出局后**整段跳过**那一步，
-    // 所以「现在是女巫行动」等于告诉你女巫还活着。玩家视角只留一条「夜晚」当分隔，
-    // 细节只在上帝视角出现。
-    if (payload.t === 'phase_changed' && isNightPhase(payload.to)) {
-      if (godView.value) {
-        out.push(formatEvent(event));
-      } else if (!nightShown) {
-        nightShown = true;
-        out.push({
-          key: `${event.seq}`,
-          day: event.day,
-          tone: 'muted',
-          text: `—— 第 ${event.day} 天 · 夜晚 ——`,
-        });
-      }
-      continue;
-    }
-    if (payload.t === 'phase_changed') nightShown = false;
-    out.push(formatEvent(event));
-  }
-
-  return out;
+// 倒计时每半秒走一格
+onMounted(() => {
+  const timer = window.setInterval(() => {
+    tickNow.value = Date.now();
+  }, 500);
+  onBeforeUnmount(() => window.clearInterval(timer));
 });
+
+/**
+ * 日志：一条事件一行。
+ *
+ * 夜里那四步现在都写出来（「夜晚 · 第 2 / 4 步 · 狼人行动」）—— 四步永远都走、步长固定，
+ * 所以「走到哪一步」是公开信息，写出来不会泄漏「这一步有没有人行动」。
+ */
+const lines = computed<EventLine[]>(() => events.value.map(formatEvent));
 
 /** 设置面板自己管取数，这里只负责开关 */
 const settingsOpen = ref(false);
@@ -83,10 +75,39 @@ const rightSeats = computed(() => seats.value.slice(half.value));
 
 const myRole = computed(() => seats.value.find((seat) => seat.seat === humanSeat.value)?.role ?? null);
 
-/** 夜里旁观者不该看到「轮到谁」，阶段名也一并含糊掉 */
+/** 流程提示：夜里写明是第几步、谁在行动（四步永远都走，写出来不泄漏谁还活着） */
 const phaseLabel = computed(() => {
-  if (!state.value) return '';
-  return state.value.masked ? '夜晚' : PHASE_LABELS[state.value.phase];
+  const current = state.value;
+  if (!current) return '';
+  if (isNightPhase(current.phase)) {
+    return `夜晚 ${nightStepIndex(current.phase)}/${NIGHT_STEPS.length} · ${NIGHT_STEP_NAMES[current.phase] ?? ''}`;
+  }
+  return PHASE_LABELS[current.phase];
+});
+
+/**
+ * 夜里那一步的倒计时。
+ *
+ * 服务端下发的是「还剩多少毫秒」，本地自己往下走 —— 用绝对时间的话，
+ * 手机跟服务器差几秒就会显示成负数或跳变。
+ */
+const stepLeftBase = ref(0);
+let stepAnchor = 0;
+const tickNow = ref(0);
+
+watch(
+  () => state.value?.nightStepLeftMs ?? 0,
+  (left) => {
+    stepLeftBase.value = left;
+    stepAnchor = Date.now();
+    tickNow.value = stepAnchor;
+  },
+);
+
+const stepSecondsLeft = computed(() => {
+  if (stepLeftBase.value <= 0) return 0;
+  const elapsed = tickNow.value - stepAnchor;
+  return Math.max(0, Math.ceil((stepLeftBase.value - elapsed) / 1000));
 });
 
 const pendingSeat = computed(() => state.value?.pending?.seat ?? null);
@@ -231,11 +252,12 @@ watch(
   (phase, previous) => {
     const current = state.value;
     if (!current || phase === undefined || previous === undefined || phase === previous) return;
-    // 夜里「轮到谁」是致命信息，绝不剧透：夜里只放昼夜那一幕
-    if (current.masked || phase === 'GAME_OVER') return;
+    // 夜里那一步也是公开流程：四步永远都走、步长固定，所以「第 2/4 步 · 狼人行动」人人可看
+    if (current.phase === 'GAME_OVER') return;
     const item = FLASHES[phase];
     if (!item) return;
-    flash.value = { key: `${current.gameId}-${current.lastSeq}-${phase}`, ...item };
+    const text = isNightPhase(phase) ? nightStepLabel(phase) : item.text;
+    flash.value = { key: `${current.gameId}-${current.lastSeq}-${phase}`, ...item, text };
     if (flashTimer !== null) window.clearTimeout(flashTimer);
     flashTimer = window.setTimeout(() => {
       flash.value = null;
@@ -293,6 +315,9 @@ function abort(): void {
       <span class="brand">AI 狼人杀</span>
 
       <span v-if="state" class="chip phase">第 {{ state.day }} 天 · {{ phaseLabel }}</span>
+      <span v-if="stepSecondsLeft > 0" class="chip step" title="这一步的固定倒计时：到点就换下一步，与有没有人行动无关">
+        ⏳ {{ stepSecondsLeft }}s
+      </span>
       <!-- 上帝视角下每张底牌都印在头像上，这里就不用再报一遍自己的身份了 -->
       <span v-if="myRole && !godView" class="chip mine">
         {{ humanSeat }} 号 · {{ ROLE_LABELS[myRole] }}
@@ -519,6 +544,14 @@ function abort(): void {
   background: rgba(88, 211, 166, 0.12);
   border-color: rgba(88, 211, 166, 0.42);
   color: var(--jade);
+}
+
+/* 夜间那一步的固定倒计时 */
+.chip.step {
+  background: rgba(147, 164, 255, 0.14);
+  border-color: rgba(147, 164, 255, 0.5);
+  color: #b3c0ff;
+  font-variant-numeric: tabular-nums;
 }
 
 /* 暂停/中止是要看得见的状态：这两个 chip 用更实的底色 */

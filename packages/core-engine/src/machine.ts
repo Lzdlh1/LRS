@@ -146,6 +146,7 @@ export function createGame(config: EngineConfig = {}): StepResult {
     resolutionStage: 'dawn',
     pendingChiefTransfer: null,
     pending: null,
+    nightBeat: 'idle',
     winner: null,
   };
 
@@ -192,6 +193,27 @@ export function step(prev: GameState, action: Action): StepResult {
   return { state, events };
 }
 
+/**
+ * 夜里那一步「到点了」。
+ *
+ * 打开 `rules.nightStepMs` 之后，夜间的换步不再由行动触发，而由会话服务按固定节拍
+ * 调这个函数 —— 行动者提前提交也照样等满这一步，节奏因此与「有没有人行动」无关。
+ * 它不是玩家能提交的 Action（不进 actionSchema），免得客户端直接跳过整夜。
+ */
+export function beatNightStep(prev: GameState): StepResult {
+  const state = structuredClone(prev) as GameState;
+  const events: GameEvent[] = [];
+
+  if (state.rules.nightStepMs <= 0 || !isNightPhase(state.phase)) return { state, events };
+
+  // 到点了：这一步还没做的就此作罢（没人行动，或行动者一直没动）
+  state.pending = null;
+  state.nightBeat = 'beaten';
+  drive(state, events);
+
+  return { state, events };
+}
+
 export function pendingRequest(state: GameState): PendingRequest | null {
   return state.pending;
 }
@@ -208,7 +230,8 @@ function drive(state: GameState, events: GameEvent[]): void {
 
   // 用「阶段是否已到 GAME_OVER」作为终止条件，而不是 winner ——
   // 因为 winner 可能在结算途中就被置上，此时还需要走完公布与结算流程。
-  while (state.phase !== 'GAME_OVER' && state.pending === null) {
+  // nightBeat 为 open 表示这一步在等固定节拍，也停下来。
+  while (state.phase !== 'GAME_OVER' && state.pending === null && state.nightBeat !== 'open') {
     steps += 1;
     if (steps > MAX_DRIVE_STEPS) {
       throw new Error(`状态机推进超过 ${MAX_DRIVE_STEPS} 步，疑似死循环（当前阶段 ${state.phase}）`);
@@ -242,6 +265,8 @@ function readPending(state: GameState): PendingRequest | null {
 function goTo(state: GameState, events: GameEvent[], phase: Phase): void {
   const from = state.phase;
   state.phase = phase;
+  // 新的一步：节拍状态归零（夜里那一步要不要按住，由阶段函数自己决定）
+  state.nightBeat = 'idle';
   emit(state, events, { t: 'phase_changed', from, to: phase });
 }
 
@@ -292,34 +317,77 @@ function ask(state: GameState, seat: SeatId, options: PendingRequest['options'],
 
 // ────────────────────────────── 夜晚 ──────────────────────────────
 
+/**
+ * 一步夜里的事做完了：固定节拍开着就按住等「到点了」，否则直接换下一步。
+ *
+ * `nightBeat === 'beaten'` 表示节拍刚敲过，这时必须真的换步 —— 再按住就会卡在这一步。
+ */
+function finishNightStep(state: GameState, events: GameEvent[], next: Phase): void {
+  if (state.rules.nightStepMs > 0 && state.nightBeat !== 'beaten') {
+    state.nightBeat = 'open';
+    return;
+  }
+  goTo(state, events, next);
+}
+
 function phaseNightGuard(state: GameState, events: GameEvent[]): void {
+  // 这一步的节拍已经到过：不管之前有没有人动过手，都换下一步
+  if (state.nightBeat === 'beaten') return finishNightStep(state, events, 'NIGHT_WOLF');
+
   const [guard] = seatsWithRole(state, 'guard');
-  if (guard === undefined) return goTo(state, events, 'NIGHT_WOLF');
-  ask(state, guard, guardOptions(state, guard), state.rules.timeoutMs.night);
+  if (guard !== undefined && !state.night.actedSeats.includes(guard)) {
+    ask(state, guard, guardOptions(state, guard), nightStepMs(state));
+    return;
+  }
+  // 这一步没人（角色出局）或已经动过手：换步 —— 但固定节拍下照样要走满这一步
+  finishNightStep(state, events, 'NIGHT_WOLF');
 }
 
 function phaseNightWolf(state: GameState, events: GameEvent[]): void {
+  if (state.nightBeat === 'beaten') return finishNightStep(state, events, 'NIGHT_WITCH');
+
   const wolves = seatsWithRole(state, 'werewolf');
-  if (wolves.length === 0) return goTo(state, events, 'NIGHT_WITCH');
   // 狼队共识由一个代表提交；内部协商由 agent-host 在 M3 阶段实现
-  ask(state, wolves[0]!, wolfOptions(state), state.rules.timeoutMs.night);
+  const speaker = wolves[0];
+  if (speaker !== undefined && !state.night.actedSeats.includes(speaker)) {
+    ask(state, speaker, wolfOptions(state), nightStepMs(state));
+    return;
+  }
+  finishNightStep(state, events, 'NIGHT_WITCH');
 }
 
 function phaseNightWitch(state: GameState, events: GameEvent[]): void {
+  if (state.nightBeat === 'beaten') return finishNightStep(state, events, 'NIGHT_SEER');
+
   const [witch] = seatsWithRole(state, 'witch');
-  if (witch === undefined) return goTo(state, events, 'NIGHT_SEER');
+  if (witch === undefined || state.night.actedSeats.includes(witch)) {
+    return finishNightStep(state, events, 'NIGHT_SEER');
+  }
 
   // 解药用光后，女巫不再被告知今夜谁被刀
   const informedKilled = state.witchPotions.antidote > 0 ? state.night.wolfTarget : null;
   emit(state, events, { t: 'witch_night_info', seat: witch, killed: informedKilled }, seatsVisible(witch));
-  ask(state, witch, witchOptions(state, witch), state.rules.timeoutMs.night);
+  ask(state, witch, witchOptions(state, witch), nightStepMs(state));
+}
+
+/** 夜间每一步给多久：固定节拍开着就用节拍，否则用通用的夜间时限 */
+function nightStepMs(state: GameState): number {
+  return state.rules.nightStepMs > 0 ? state.rules.nightStepMs : state.rules.timeoutMs.night;
 }
 
 function phaseNightSeer(state: GameState, events: GameEvent[]): void {
-  const [seer] = seatsWithRole(state, 'seer');
-  if (seer !== undefined && !state.night.actedSeats.includes(seer)) {
-    ask(state, seer, seerOptions(state, seer), state.rules.timeoutMs.night);
-    return;
+  if (state.nightBeat !== 'beaten') {
+    const [seer] = seatsWithRole(state, 'seer');
+    if (seer !== undefined && !state.night.actedSeats.includes(seer)) {
+      ask(state, seer, seerOptions(state, seer), nightStepMs(state));
+      return;
+    }
+
+    // 固定节拍下，验人这一步也要等满才结算 —— 否则「天亮得特别快」本身就说明有人查了人
+    if (state.rules.nightStepMs > 0) {
+      state.nightBeat = 'open';
+      return;
+    }
   }
 
   resolveNight(state);
@@ -865,6 +933,9 @@ function applyAction(state: GameState, events: GameEvent[], action: Action): voi
 
 /** 行动之后该往哪走。留在原阶段的（如 NIGHT_SEER）由阶段函数自己处理后续推进。 */
 function afterAction(state: GameState, events: GameEvent[]): void {
+  // 夜间固定节拍开着时，换步交给会话服务的「到点了」—— 行动不换步
+  if (state.rules.nightStepMs > 0 && isNightPhase(state.phase)) return;
+
   switch (state.phase) {
     case 'NIGHT_GUARD':
       return goTo(state, events, 'NIGHT_WOLF');

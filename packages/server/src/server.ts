@@ -2,6 +2,7 @@ import { createReadStream, existsSync, statSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import type { Logger } from '@lrs/shared';
+import type { EngineConfig } from '@lrs/core-engine';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { AdminHandler } from './admin.ts';
 import type { ServerConfig } from './config.ts';
@@ -145,6 +146,8 @@ export interface StartServerOptions {
   accessTokenOf?: () => string;
   /** 新连接的默认视角。'human' = 跟着本局真人的座位走（位次每局随机）。 */
   defaultViewer?: 'god' | number | 'human';
+  /** 村规覆盖。产品端会在这里打开夜间固定节拍（见 Rules.nightStepMs） */
+  rules?: EngineConfig['rules'];
 }
 
 export interface RunningServer {
@@ -160,6 +163,7 @@ export function startServer(options: StartServerOptions): RunningServer {
   const room = new GameRoom({
     logger: wsLogger.child('room'),
     store,
+    rules: options.rules,
     hostFactory: options.hostFactory,
   });
 

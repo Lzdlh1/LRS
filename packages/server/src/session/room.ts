@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { AgentHost, DecisionLogEntry } from '@lrs/agent-host';
 import {
+  beatNightStep,
   choicesFor,
   concurrentBatch,
   createGame,
@@ -14,7 +15,7 @@ import {
   type PendingRequest,
   type Viewer,
 } from '@lrs/core-engine';
-import type { Action, GameEvent, Logger, SeatId } from '@lrs/shared';
+import { isNightPhase, type Action, type GameEvent, type Logger, type SeatId } from '@lrs/shared';
 import type { GameStore } from '../store/gameStore.ts';
 import { defaultActionFor, randomActionFor } from './defaultAction.ts';
 import {
@@ -126,6 +127,12 @@ export class GameRoom {
   private humanSeat: SeatId = 1;
   /** 正等着真人确认的重大事件；非空时房间一律不往下推（见 ACK_KINDS） */
   private ackSeq: number[] = [];
+  /** 夜间固定节拍的计时器（见 Rules.nightStepMs） */
+  private beatTimer: NodeJS.Timeout | null = null;
+  /** 节拍正在给哪一步计时（`天:阶段`） */
+  private nightClockKey = '';
+  /** 当前这一步节拍到点的绝对时间；0 = 不在夜里那一步上 */
+  private nightStepEndsAt = 0;
 
   constructor(options: GameRoomOptions) {
     this.roomId = options.id ?? randomUUID();
@@ -135,6 +142,7 @@ export class GameRoom {
     this.hostFactory = options.hostFactory;
     this.currentGameId = randomUUID();
     this.state = this.startNewGame();
+    this.syncNightClock();
     this.armTimer();
     this.scheduleAi();
   }
@@ -153,6 +161,8 @@ export class GameRoom {
 
   subscribe(subscriber: Subscriber): void {
     this.subscribers.set(subscriber.id, subscriber);
+    // 先起时钟再发快照，否则刚连上那一下拿到的倒计时是 0
+    this.syncNightClock();
     this.sendSnapshot(subscriber, 0);
     // 人回来了就把推进接上：空闲期间计时器是停着的
     this.armTimer();
@@ -246,6 +256,7 @@ export class GameRoom {
     });
 
     this.record(result.events);
+    this.syncNightClock();
     this.checkFinished();
 
     // 重大信息：先停在这里，等真人点一下「知道了」。checkFinished 可能刚排过计时器，得清掉
@@ -334,10 +345,12 @@ export class GameRoom {
 
     if (paused) {
       this.clearTimer();
+      this.clearNightClock();
       this.deadlineAt = 0;
     }
     this.broadcastState();
     if (!paused) {
+      this.syncNightClock();
       this.armTimer();
       this.scheduleAi();
     }
@@ -350,6 +363,7 @@ export class GameRoom {
     this.paused = false;
     this.ackSeq = [];
     this.clearTimer();
+    this.clearNightClock();
     this.deadlineAt = 0;
 
     this.logger.info('对局被中止', {
@@ -362,8 +376,10 @@ export class GameRoom {
 
   newGame(seed?: number): void {
     this.clearTimer();
+    this.clearNightClock();
     this.currentGameId = randomUUID();
     this.state = this.startNewGame(seed);
+    this.syncNightClock();
     this.armTimer();
     // 位次重抽之后视角怎么跟，交给客户端自己重发 setViewer：
     // 服务端没法从「viewer 恰好等于上一局的真人座位」推断出谁才是真人，
@@ -374,7 +390,64 @@ export class GameRoom {
 
   dispose(): void {
     this.clearTimer();
+    this.clearNightClock();
     this.subscribers.clear();
+  }
+
+  // ── 夜间固定节拍 ──
+
+  /**
+   * 这一步的时钟从**进入这一步**就开始走，到点就换步 ——
+   * 不管行动者有没有提交，甚至这一步根本没人在。
+   *
+   * 只有「换步节奏与有没有人行动无关」，才谈得上「知道走到第几步、却看不出这一步有没有人动」：
+   * 否则某一步只用了两秒，就等于宣布这一步有人动过手。
+   */
+  private syncNightClock(): void {
+    const stepMs = this.rules?.nightStepMs ?? 0;
+    if (stepMs <= 0 || !isNightPhase(this.state.phase)) {
+      this.clearNightClock();
+      return;
+    }
+
+    const key = `${this.state.day}:${this.state.phase}`;
+    if (this.nightClockKey === key) return; // 同一步：已经在计时
+
+    // 暂停 / 中止 / 等确认 / 没人在看：这一步的时钟先挂起来，解冻时会重新计
+    if (this.paused || this.stopped || this.ackSeq.length > 0 || this.subscribers.size === 0) {
+      this.nightStepEndsAt = 0;
+      return;
+    }
+
+    this.nightClockKey = key;
+    this.nightStepEndsAt = Date.now() + stepMs;
+    this.beatTimer = setTimeout(() => this.beatStep(), stepMs);
+    if (typeof this.beatTimer.unref === 'function') this.beatTimer.unref();
+  }
+
+  private clearNightClock(): void {
+    if (this.beatTimer) {
+      clearTimeout(this.beatTimer);
+      this.beatTimer = null;
+    }
+    this.nightClockKey = '';
+    this.nightStepEndsAt = 0;
+  }
+
+  /** 到点了：换下一步（这一步没做的那一手就此作罢） */
+  private beatStep(): void {
+    this.clearNightClock();
+    if (this.paused || this.stopped || this.ackSeq.length > 0) return;
+
+    const result = beatNightStep(this.state);
+    if (result.events.length === 0) return;
+
+    this.state = result.state;
+    this.record(result.events);
+    this.syncNightClock();
+    this.checkFinished();
+    this.broadcast(result.events);
+    this.scheduleAi();
   }
 
   // ── 内部 ──
@@ -496,6 +569,12 @@ export class GameRoom {
     }
 
     const seat = pending.seat;
+
+    // 夜里走固定节拍：这一步的截止时间就是节拍本身，兜底也交给节拍（不再另排计时器）
+    if (this.nightStepEndsAt > 0) {
+      this.deadlineAt = this.nightStepEndsAt;
+      return;
+    }
 
     // AI 的节奏由模型路由层的超时与降级控制，这里不再叠一层定时器
     if (this.host?.handles(seat)) {
@@ -731,6 +810,7 @@ export class GameRoom {
       paused: this.paused,
       stopped: this.stopped,
       ackSeq: this.ackSeq,
+      nightStepLeftMs: this.nightStepEndsAt > 0 ? Math.max(0, this.nightStepEndsAt - Date.now()) : 0,
     });
   }
 

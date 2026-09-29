@@ -1,6 +1,7 @@
-import type { Action, GameEvent, Role } from '@lrs/shared';
+import type { Action, GameEvent, Phase, Role } from '@lrs/shared';
 import { describe, expect, it } from 'vitest';
-import { createGame, isOver, pendingRequest, step } from '../src/machine.ts';
+import { choicesFor } from '../src/choices.ts';
+import { beatNightStep, createGame, isOver, pendingRequest, step } from '../src/machine.ts';
 import { guardOptions, onBoardSeats, playerAt, witchOptions } from '../src/options.ts';
 import type { EngineConfig, GameState, StepResult } from '../src/types.ts';
 
@@ -222,6 +223,100 @@ describe('非法 Action 被拒绝但不影响状态', () => {
     step(result.state, { kind: 'guard_protect', actor: GUARD, target: 99 });
     const ok = step(result.state, { kind: 'guard_protect', actor: GUARD, target: 3 });
     expect(pendingRequest(ok.state)?.seat).toBe(WOLF_REP);
+  });
+});
+
+describe('夜间固定节拍', () => {
+  const BEAT = { rules: { nightStepMs: 1000 } };
+
+  /** 有行动就行动、该敲节拍就敲，一路推到离开夜晚 */
+  function driveNight(start: StepResult, limit = 60) {
+    let current = start;
+    const events = [...start.events];
+    for (let i = 0; i < limit && current.state.phase.startsWith('NIGHT_'); i += 1) {
+      const pending = pendingRequest(current.state);
+      if (pending) {
+        current = step(current.state, choicesFor(pending)[0]!.action);
+      } else if (current.state.nightBeat === 'open') {
+        current = beatNightStep(current.state);
+      } else {
+        break;
+      }
+      events.push(...current.events);
+    }
+    const phases = events
+      .filter((e) => e.payload.t === 'phase_changed')
+      .map((e) => (e.payload as { to: Phase }).to)
+      .filter((phase) => phase.startsWith('NIGHT_'));
+    return { state: current.state, events, phases };
+  }
+
+  it('行动不换步：提交之后原地等「到点了」', () => {
+    const game = newGame(BEAT);
+    expect(game.state.phase).toBe('NIGHT_GUARD');
+    expect(pendingRequest(game.state)?.seat).toBe(GUARD);
+
+    const acted = step(game.state, { kind: 'guard_protect', actor: GUARD, target: 1 });
+    expect(acted.state.phase, '提交了也还停在这一步').toBe('NIGHT_GUARD');
+    expect(acted.state.nightBeat).toBe('open');
+
+    const beaten = beatNightStep(acted.state);
+    expect(beaten.state.phase).toBe('NIGHT_WOLF');
+  });
+
+  it('这一步没人动（超时）也照样到点换步', () => {
+    const game = newGame(BEAT);
+    expect(pendingRequest(game.state)?.seat).toBe(GUARD);
+
+    const beaten = beatNightStep(game.state);
+    expect(beaten.state.phase).toBe('NIGHT_WOLF');
+  });
+
+  it('四步永远都走：一夜固定是守卫 → 狼人 → 女巫 → 预言家', () => {
+    const { state, phases } = driveNight(newGame(BEAT));
+
+    expect(phases).toEqual(['NIGHT_GUARD', 'NIGHT_WOLF', 'NIGHT_WITCH', 'NIGHT_SEER']);
+    expect(state.phase.startsWith('NIGHT_')).toBe(false);
+  });
+
+  it('角色出局也照走那一步，只是没人行动', () => {
+    // 板子里没有守卫、也没有女巫
+    const noGuardWitch: Role[] = [
+      'villager',
+      'werewolf',
+      'seer',
+      'villager',
+      'hunter',
+      'villager',
+      'werewolf',
+      'villager',
+      'werewolf',
+    ];
+    const game = createGame({
+      fixedRoles: noGuardWitch,
+      humanSeats: [1],
+      rules: { nightStepMs: 1000 },
+    });
+
+    expect(game.state.phase).toBe('NIGHT_GUARD');
+    expect(pendingRequest(game.state), '这一步没人在，谁都不问').toBeNull();
+    expect(game.state.nightBeat).toBe('open');
+
+    const { phases } = driveNight(game);
+    expect(phases, '没人也照样占满这两步').toEqual([
+      'NIGHT_GUARD',
+      'NIGHT_WOLF',
+      'NIGHT_WITCH',
+      'NIGHT_SEER',
+    ]);
+  });
+
+  it('关掉节拍时还是老行为：一提交就换步', () => {
+    const game = newGame();
+    expect(game.state.nightBeat).toBe('idle');
+
+    const acted = step(game.state, { kind: 'guard_protect', actor: GUARD, target: 1 });
+    expect(acted.state.phase).toBe('NIGHT_WOLF');
   });
 });
 

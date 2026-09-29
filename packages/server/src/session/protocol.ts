@@ -73,6 +73,13 @@ export interface ClientState {
    * 任何模型调用，等人确认完再继续。
    */
   ackSeq: number[];
+  /**
+   * 夜里这一步还剩多少毫秒（0 = 不在夜里那一步上）。
+   *
+   * 夜间四步固定时长、到点就换步，与「有没有人行动」无关，所以把这个倒计时亮给所有人
+   * 不会泄漏任何东西 —— 反倒是「看得出走到第几步、看不出这一步有没有人动」的前提。
+   */
+  nightStepLeftMs: number;
   winner: Camp | null;
   lastSeq: number;
 }
@@ -178,6 +185,8 @@ export interface ProjectArgs {
   stopped: boolean;
   /** 正等着真人确认的事件序号，见 ClientState.ackSeq */
   ackSeq: number[];
+  /** 夜里这一步的剩余毫秒，见 ClientState.nightStepLeftMs */
+  nightStepLeftMs: number;
 }
 
 /**
@@ -196,6 +205,7 @@ export function projectState({
   paused,
   stopped,
   ackSeq,
+  nightStepLeftMs,
 }: ProjectArgs): ClientState {
   const isGod = viewer === 'god';
   const viewerSeat = typeof viewer === 'number' ? viewer : null;
@@ -253,6 +263,7 @@ export function projectState({
     paused,
     stopped,
     ackSeq: [...ackSeq],
+    nightStepLeftMs,
     winner: state.winner,
     lastSeq: state.seq,
   };

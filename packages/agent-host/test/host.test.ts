@@ -77,6 +77,25 @@ function humanFallback(pending: PendingRequest): Action {
   throw new Error(`没有可用行动：${pending.options.map((option) => option.kind).join(',')}`);
 }
 
+/** 「逢决策必跳预言家」的假大脑：用来验证身份宣称的公开时机 */
+function claimingBrain(): MockProvider {
+  return new MockProvider({
+    respond: (request) => {
+      const user = request.messages.find((message) => message.role === 'user')?.content ?? '';
+      if (user.includes('只输出发言内容本身')) return '我才是预言家，昨晚验了 9 号，是查杀。';
+      return JSON.stringify({
+        choiceIndex: 1,
+        reasoning: '悍跳预言家，先把水搅浑。',
+        stance: '我要跳预言家',
+        push: null,
+        reads: [],
+        claim: { role: 'seer', note: '我验了 9 号是查杀' },
+        mood: 'confident',
+      });
+    },
+  });
+}
+
 function makeRouter(brain: MockProvider): LlmRouter {
   return new LlmRouter({
     providers: { brain },
@@ -250,6 +269,54 @@ describe('Agent 决策映射', () => {
     expect(entries[0]).toMatchObject({ seat: pending!.seat });
     expect(entries[0]!.reasoning.length).toBeGreaterThan(0);
     expect(entries[0]!.kind.length).toBeGreaterThan(0);
+  });
+
+  it('身份宣称只有真的发言了才算公开', async () => {
+    const host = createAgentHost({
+      router: makeRouter(claimingBrain()),
+      logger,
+      humanSeats: [1],
+      seatCount: 9,
+      names: NAMES,
+      rng: seededRng(5),
+      enableReflection: false,
+    });
+
+    let game = createGame({ fixedRoles: FIXED_ROLES, humanSeats: [1] });
+    host.observe(game.events);
+
+    // 一路走到第一次 AI 发言。途中的守/刀/验这些决策同样带着 claim，
+    // 但那些只是「计划」—— 一个字都还没说出口
+    let speechPending: PendingRequest | null = null;
+    for (let i = 0; i < 300; i += 1) {
+      const pending = pendingRequest(game.state);
+      if (!pending) break;
+      if (needsSpeech(pending) && host.handles(pending.seat)) {
+        speechPending = pending;
+        break;
+      }
+      const action = host.handles(pending.seat)
+        ? await host.act(game.state, pending)
+        : humanFallback(pending);
+      const next = step(game.state, action);
+      game = next;
+      host.observe(next.events);
+    }
+
+    expect(speechPending).not.toBeNull();
+    // 关键断言：这一步（修复前）claims 里已经塞满了还没发生的「宣称」，
+    // 先发言的人就会照着不存在的话往下编
+    expect(host.snapshot.claims).toEqual([]);
+
+    // 决策产出了、发言文本也生成了，但只要还没落地（spoke 事件）就不算公开
+    const speech = await host.act(game.state, speechPending!);
+    expect(speech.kind).toBe('speak');
+    expect(host.snapshot.claims).toEqual([]);
+
+    const after = step(game.state, speech);
+    host.observe(after.events);
+    expect(host.snapshot.claims.map((claim) => claim.seat)).toContain(speechPending!.seat);
+    expect(host.snapshot.timeline.some((line) => line.includes(`宣称自己是预言家`))).toBe(true);
   });
 
   it('发言阶段会先决策再生成发言文本', async () => {

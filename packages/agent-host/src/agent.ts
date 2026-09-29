@@ -214,6 +214,11 @@ export class Agent {
     });
 
     if (isSpeech) {
+      // 「你跳了 X」这条私有笔记要等真的开口了才记：上警是并行预思考，
+      // 那一步的 claim 只是计划，提前记下来会让它以为自己已经报过身份了
+      if (decision.claim) {
+        this.pushPrivateNote(`你跳了${decision.claim.role}：${decision.claim.note}`);
+      }
       const speech = await this.composeSpeech(
         promptInput,
         decision,
@@ -316,9 +321,6 @@ export class Agent {
     this.belief.push = decision.push;
     this.belief.stance = decision.stance;
     this.belief.mood = decision.mood;
-    if (decision.claim) {
-      this.pushPrivateNote(`你跳了${decision.claim.role}：${decision.claim.note}`);
-    }
   }
 
   private pushPrivateNote(note: string): void {

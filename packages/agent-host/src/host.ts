@@ -3,7 +3,7 @@ import type { LlmRouter } from '@lrs/llm-router';
 import type { Action, GameEvent, Logger, Role, SeatId, SpeechContext } from '@lrs/shared';
 import { Agent } from './agent.ts';
 import { PHASE_LABELS } from './labels.ts';
-import { applyEvents, createFacts, recordClaim, type PublicFacts } from './memory/facts.ts';
+import { applyEvents, createFacts, recordClaim, type ClaimRecord, type PublicFacts } from './memory/facts.ts';
 import { pickProfiles, type AgentProfile } from './profiles.ts';
 
 export interface AiSeat {
@@ -84,6 +84,15 @@ export class AgentHost {
   private readonly onSpeech: ((seat: SeatId, text: string) => void) | null;
   private readonly onSpeechDelta: ((seat: SeatId, delta: string) => void) | null;
   private readonly onDecision: ((entry: DecisionLogEntry) => void) | null;
+  /**
+   * 想好了但还没说出口的身份宣称。
+   *
+   * 为什么不能一产出决策就公开：上警是**并行预思考**，8 个座位的决策同一瞬间产出，
+   * 里面常常已经带了「我要跳预言家」。这些宣称要是当场写进公共事实层，
+   * 先发言的人就会看到「还没发生过的宣称」，于是照着一段不存在的话往下编，
+   * 后面的人再跟着这段虚构的前提走。所以这里挂到 spoke 事件上 —— 说出口才算数。
+   */
+  private readonly unspokenClaims = new Map<SeatId, ClaimRecord>();
   private reflecting = false;
 
   constructor(options: AgentHostOptions) {
@@ -129,6 +138,7 @@ export class AgentHost {
     if (events.length === 0) return;
 
     applyEvents(this.facts, events);
+    this.publishClaims(events);
     for (const agent of this.agents.values()) {
       agent.observe(eventsFor(events, agent.seat));
     }
@@ -136,6 +146,26 @@ export class AgentHost {
     const tally = events.find((event) => event.payload.t === 'vote_tally');
     if (this.reflection && tally?.payload.t === 'vote_tally' && !this.reflecting) {
       void this.reflectAll(this.summarizeVote(tally.payload.counts, tally.payload.eliminated));
+    }
+  }
+
+  /**
+   * 把「已经说出口」的身份宣称记进公共事实层。
+   *
+   * 挂在 spoke 事件上，而不是决策产出的那一刻 —— 只有真的发言了，别人才听得到。
+   * 动作本身已经保证：房间是在 observe 完这一批事件之后才会叫下一个人行动，
+   * 所以先说话的人先入库，后说话的人一定看得到。
+   */
+  private publishClaims(events: readonly GameEvent[]): void {
+    for (const event of events) {
+      if (event.payload.t !== 'spoke') continue;
+
+      const claim = this.unspokenClaims.get(event.payload.seat);
+      if (!claim) continue;
+      this.unspokenClaims.delete(event.payload.seat);
+      // 隔天才说出口的计划作废：那是当时那一轮的想法，不是今天要报的
+      if (claim.day !== event.day) continue;
+      recordClaim(this.facts, claim);
     }
   }
 
@@ -157,8 +187,10 @@ export class AgentHost {
       delta ? (chunk: string) => delta(pending.seat, chunk) : undefined,
     );
 
-    if (result.claim) {
-      recordClaim(this.facts, {
+    // 只有「发言」才谈得上公开宣称：夜里那一手、上警那一票带出来的 claim 都只是计划，
+    // 先攒着，等这个座位真的开口（spoke 事件）再公开
+    if (result.claim && result.action.kind === 'speak') {
+      this.unspokenClaims.set(pending.seat, {
         seat: pending.seat,
         role: result.claim.role,
         day: this.facts.day,

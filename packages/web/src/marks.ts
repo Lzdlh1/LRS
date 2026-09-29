@@ -19,8 +19,13 @@ export interface SeatMark {
  * 从「已按视角裁剪过的事件流」里攒出座位标记。
  *
  * 关键点：入参必须是服务端裁剪后的可见事件 —— 拿不到的信息在这里也不可能凭空出现。
+ * 谁该知道什么由引擎的 visibility 决定（狼王知狼、狼不知狼王这类差异也走同一套），
+ * 这里只负责「什么时候可以摆到脸上」。
  */
-export function deriveMarks(events: readonly GameEvent[]): Record<SeatId, SeatMark> {
+export function deriveMarks(
+  events: readonly GameEvent[],
+  options: { teammatesKnown: boolean },
+): Record<SeatId, SeatMark> {
   const marks: Record<SeatId, SeatMark> = {};
 
   const setCamp = (seat: SeatId, camp: 'good' | 'wolf', from: string): void => {
@@ -32,10 +37,13 @@ export function deriveMarks(events: readonly GameEvent[]): Record<SeatId, SeatMa
     const payload = event.payload;
     switch (payload.t) {
       case 'seer_result':
+        // 查验是「出结果」之后才有标记，这一点天然由事件本身保证
         setCamp(payload.target, payload.camp, '预言家查验');
         break;
 
       case 'wolf_teammates':
+        // 首夜狼人睁眼之前，狼也还没跟队友碰上面，先不摆出来
+        if (!options.teammatesKnown) break;
         // 只有狼本人收得到这条，标上去不会泄漏给别人（事件本来就被裁过）
         for (const mate of payload.mates) setCamp(mate, 'wolf', '狼队友');
         break;

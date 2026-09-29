@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ROLE_LABELS } from '@lrs/shared';
 import type { ClientState } from '@lrs/server/protocol';
 import { ROLE_GLYPHS } from '../labels';
 import type { SeatMark } from '../marks';
@@ -24,6 +25,11 @@ function markOf(seat: number): SeatMark | undefined {
 
 function pickable(seat: number): boolean {
   return (props.targets[seat]?.length ?? 0) > 0;
+}
+
+/** 自己那个座位显示底牌，不显示「玩家N」这种没有信息量的名字 */
+function ownRoleText(item: ClientSeat): string {
+  return item.role ? ROLE_LABELS[item.role] : '你的座位';
 }
 </script>
 
@@ -52,7 +58,9 @@ function pickable(seat: number): boolean {
           <span class="num">{{ item.seat }}</span>
           <span v-if="!item.alive" class="cross">✕</span>
         </span>
-        <span v-if="item.role" class="glyph" :title="`身份：${ROLE_GLYPHS[item.role]}`">
+        <!-- 自己那个座位一眼要认得出来：不写「我」，就得回头翻日志数座位 -->
+        <span v-if="item.seat === humanSeat" class="me-tag">我</span>
+        <span v-else-if="item.role" class="glyph" :title="`身份：${ROLE_GLYPHS[item.role]}`">
           {{ ROLE_GLYPHS[item.role] }}
         </span>
         <span v-if="item.isChief" class="chief-mark" title="警长">🎖</span>
@@ -68,7 +76,10 @@ function pickable(seat: number): boolean {
         <span v-if="markOf(item.seat)?.note" class="note" :title="markOf(item.seat)?.note ?? ''">🗡</span>
       </span>
 
-      <span class="name">{{ item.name }}</span>
+      <!-- 自己的底牌直接写在名字的位置上（「玩家N」这种名字没有信息量） -->
+      <span class="name" :class="{ own: item.seat === humanSeat }">
+        {{ item.seat === humanSeat ? ownRoleText(item) : item.name }}
+      </span>
       <span v-if="pickable(item.seat)" class="say">{{ targets[item.seat]?.[0] }}</span>
     </button>
   </aside>
@@ -181,6 +192,30 @@ function pickable(seat: number): boolean {
   font-size: 10px;
   line-height: 13px;
   text-align: center;
+}
+
+/* 自己的座位：实心青玉「我」牌，比边框加粗更认得出 */
+.me-tag {
+  position: absolute;
+  left: -5px;
+  top: -5px;
+  min-width: 17px;
+  height: 17px;
+  line-height: 17px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--jade);
+  color: #05271c;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.65);
+}
+
+.name.own {
+  color: var(--jade);
+  font-weight: 700;
+  font-size: 11px;
 }
 
 .chief-mark {

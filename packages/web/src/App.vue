@@ -314,7 +314,10 @@ function abort(): void {
       </button>
       <span class="brand">AI 狼人杀</span>
 
-      <span v-if="state" class="chip phase">第 {{ state.day }} 天 · {{ phaseLabel }}</span>
+      <!-- 昼夜在流程提示上也要一眼看得出：白天太阳、夜里月亮，配色跟着换 -->
+      <span v-if="state" class="chip phase" :class="{ night: night }">
+        {{ night ? '🌙' : '☀' }} 第 {{ state.day }} 天 · {{ phaseLabel }}
+      </span>
       <span v-if="stepSecondsLeft > 0" class="chip step" title="这一步的固定倒计时：到点就换下一步，与有没有人行动无关">
         ⏳ {{ stepSecondsLeft }}s
       </span>
@@ -459,7 +462,11 @@ function abort(): void {
   }
 }
 
-/* 昼夜底色做两层叠着淡入淡出，比切换 background-image 平滑 */
+/*
+ * 昼夜底色做两层叠着淡入淡出，比切换 background-image 平滑。
+ * 白天/夜晚要**一眼分得出**（参考网易那版：同一间屋子，白天有斜进来的天光、夜里是月光和星点）。
+ * 底子仍然偏暗 —— 面板、站位卡都是暗底的，背景一白就全糊了。
+ */
 .bg {
   position: absolute;
   inset: 0;
@@ -470,16 +477,21 @@ function abort(): void {
 
 .bg-night {
   background:
-    radial-gradient(120% 70% at 50% -12%, rgba(147, 164, 255, 0.16) 0%, transparent 58%),
-    radial-gradient(90% 60% at 8% 106%, rgba(43, 26, 30, 0.7) 0%, transparent 62%),
-    linear-gradient(180deg, #0c1018 0%, #05070c 100%);
+    radial-gradient(circle at 19% 7%, rgba(222, 232, 255, 0.2) 0%, rgba(147, 164, 255, 0.07) 18%, transparent 40%),
+    radial-gradient(1.6px 1.6px at 12% 15%, rgba(255, 255, 255, 0.7), transparent 100%),
+    radial-gradient(1.3px 1.3px at 30% 8%, rgba(255, 255, 255, 0.5), transparent 100%),
+    radial-gradient(1.7px 1.7px at 46% 21%, rgba(255, 255, 255, 0.55), transparent 100%),
+    radial-gradient(1.2px 1.2px at 62% 10%, rgba(255, 255, 255, 0.45), transparent 100%),
+    radial-gradient(1.5px 1.5px at 85% 19%, rgba(255, 255, 255, 0.5), transparent 100%),
+    radial-gradient(1.3px 1.3px at 72% 30%, rgba(255, 255, 255, 0.35), transparent 100%),
+    linear-gradient(180deg, #0a0f1a 0%, #05070c 100%);
 }
 
 .bg-day {
   background:
-    radial-gradient(120% 70% at 50% -14%, rgba(255, 190, 108, 0.2) 0%, transparent 56%),
-    radial-gradient(90% 60% at 92% 104%, rgba(60, 46, 30, 0.55) 0%, transparent 62%),
-    linear-gradient(180deg, #1a2130 0%, #0b0f18 100%);
+    radial-gradient(circle at 76% 6%, rgba(255, 216, 156, 0.28) 0%, rgba(255, 196, 120, 0.11) 20%, transparent 44%),
+    repeating-linear-gradient(104deg, rgba(255, 226, 176, 0.05) 0 2px, transparent 2px 26px),
+    linear-gradient(180deg, #2b3a55 0%, #1a2434 54%, #0f1622 100%);
 }
 
 .bar {
@@ -538,6 +550,13 @@ function abort(): void {
   background: rgba(217, 178, 106, 0.1);
   border-color: rgba(217, 178, 106, 0.42);
   color: var(--gold);
+}
+
+/* 夜里换成月光色，跟白天一眼分得开 */
+.chip.phase.night {
+  background: rgba(147, 164, 255, 0.12);
+  border-color: rgba(147, 164, 255, 0.5);
+  color: #b3c0ff;
 }
 
 .chip.mine {

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>卡面预览</title>
+<style>
+  /* 这个页面故意不放任何常驻动画：截图工具要等画面稳定，有动画就会超时 */
+  body { margin: 0; padding: 18px 20px 40px; background: #0a0d14; color: #d9dfee;
+         font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+  h1 { font-size: 12px; letter-spacing: .18em; color: #7d879e; font-weight: 500; margin: 22px 0 10px; }
+  h1:first-child { margin-top: 0; }
+  .row { display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; }
+  .item { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+  .item span { font-size: 10px; color: #5b6579; }
+  .seat { width: 46px; height: 46px; border-radius: 50%; background: #141a26;
+          border: 1px solid #2c3548; display: flex; align-items: center; justify-content: center; }
+  .card { width: 210px; border-radius: 14px; padding: 14px 12px; text-align: center;
+          background: linear-gradient(180deg, #1b2130, #0c1018); border: 1px solid #33405a; }
+  .card .kicker { font-family: KaiTi, STKaiti, serif; font-size: 15px; letter-spacing: .22em; color: #f0d79a; }
+  .card .head { font-family: KaiTi, STKaiti, serif; font-size: 21px; letter-spacing: .1em; color: #ffb4ae; margin: 8px 0 4px; }
+  .card .body { font-size: 13px; line-height: 1.7; color: #dfe5f5; }
+  .stack { position: relative; display: inline-block; }
+  .stack .stamp { position: absolute; right: -20px; bottom: -14px; opacity: .95; }
+</style>
+</head>
+<body>
+
+<h1>徽记 · 120</h1>
+<div class="row">
+  <div class="item"><img src="sigils/werewolf.svg" width="120" height="120"><span>狼人</span></div>
+  <div class="item"><img src="sigils/seer.svg" width="120" height="120"><span>预言家</span></div>
+  <div class="item"><img src="sigils/witch.svg" width="120" height="120"><span>女巫</span></div>
+  <div class="item"><img src="sigils/hunter.svg" width="120" height="120"><span>猎人</span></div>
+  <div class="item"><img src="sigils/guard.svg" width="120" height="120"><span>守卫</span></div>
+  <div class="item"><img src="sigils/villager.svg" width="120" height="120"><span>平民</span></div>
+</div>
+
+<h1>小尺寸 · 46 / 26（座位角标）</h1>
+<div class="row">
+  <div class="item"><img src="sigils/werewolf.svg" width="46"><span>46</span></div>
+  <div class="item"><img src="sigils/seer.svg" width="46"><span>46</span></div>
+  <div class="item"><img src="sigils/witch.svg" width="46"><span>46</span></div>
+  <div class="item"><img src="sigils/hunter.svg" width="46"><span>46</span></div>
+  <div class="item"><img src="sigils/guard.svg" width="46"><span>46</span></div>
+  <div class="item"><img src="sigils/villager.svg" width="46"><span>46</span></div>
+  <div class="item"><img src="sigils/werewolf.svg" width="26"><span>26</span></div>
+  <div class="item"><img src="sigils/villager.svg" width="26"><span>26</span></div>
+</div>
+
+<h1>印章</h1>
+<div class="row">
+  <div class="item"><img src="stamps/wolf.svg" width="130" height="130"><span>查杀</span></div>
+  <div class="item"><img src="stamps/good.svg" width="130" height="130"><span>金水</span></div>
+</div>
+
+<h1>合成：查验卡片 + 印章</h1>
+<div class="row">
+  <div class="card">
+    <div class="kicker">查验结果</div>
+    <div class="stack">
+      <img src="sigils/werewolf.svg" width="92" height="92">
+      <img class="stamp" src="stamps/wolf.svg" width="58" height="58">
+    </div>
+    <div class="head">3 号是狼人</div>
+    <div class="body">第 1 夜 · 预言家</div>
+  </div>
+  <div class="card">
+    <div class="kicker">查验结果</div>
+    <div class="stack">
+      <img src="sigils/villager.svg" width="92" height="92">
+      <img class="stamp" src="stamps/good.svg" width="58" height="58">
+    </div>
+    <div class="head">6 号是好人</div>
+    <div class="body">第 2 夜 · 预言家</div>
+  </div>
+</div>
+
+</body>
+</html>

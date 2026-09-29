@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="守卫">
+  <defs>
+    <radialGradient id="g-plate" cx="50%" cy="36%" r="70%">
+      <stop offset="0" stop-color="#212a4a"/>
+      <stop offset="1" stop-color="#080b14"/>
+    </radialGradient>
+    <linearGradient id="g-ring" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#c3cdff"/>
+      <stop offset="1" stop-color="#53619f"/>
+    </linearGradient>
+    <linearGradient id="g-face" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#93a4ff" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#93a4ff" stop-opacity="0.08"/>
+    </linearGradient>
+  </defs>
+
+  <circle cx="60" cy="60" r="52" fill="url(#g-plate)"/>
+  <circle cx="60" cy="60" r="52" fill="none" stroke="url(#g-ring)" stroke-width="2.4" stroke-opacity="0.75"/>
+  <circle cx="60" cy="60" r="45" fill="none" stroke="#93a4ff" stroke-opacity="0.3" stroke-width="1"/>
+
+  <!-- 盾 -->
+  <path d="M60 22 L86 32 V58 Q60 92 34 58 V32 Z"
+        fill="url(#g-face)" stroke="#c3cdff" stroke-width="2.6" stroke-linejoin="round"/>
+  <!-- 中线与横梁 -->
+  <path d="M60 30 V80" stroke="#c3cdff" stroke-width="1.8" stroke-opacity="0.55"/>
+  <path d="M44 46 H76" stroke="#c3cdff" stroke-width="1.8" stroke-opacity="0.45"/>
+  <!-- 顶端的守夜星 -->
+  <path d="M60 14 l3.4 6.4 7 1 -5 4.9 1.2 7 -6.6 -3.5 -6.6 3.5 1.2 -7 -5 -4.9 7 -1 Z"
+        fill="#c3cdff" fill-opacity="0.85"/>
+</svg>

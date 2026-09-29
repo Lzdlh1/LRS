@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="狼人">
+  <defs>
+    <radialGradient id="w-plate" cx="50%" cy="36%" r="70%">
+      <stop offset="0" stop-color="#3c1f24"/>
+      <stop offset="1" stop-color="#100b0f"/>
+    </radialGradient>
+    <linearGradient id="w-ring" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f08d84"/>
+      <stop offset="1" stop-color="#a83b32"/>
+    </linearGradient>
+    <filter id="w-glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="2.4" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <circle cx="60" cy="60" r="52" fill="url(#w-plate)"/>
+  <circle cx="60" cy="60" r="52" fill="none" stroke="url(#w-ring)" stroke-width="2.4" stroke-opacity="0.75"/>
+  <circle cx="60" cy="60" r="45" fill="none" stroke="#d2554a" stroke-opacity="0.28" stroke-width="1"/>
+
+  <!-- 狼头剪影：尖耳、宽腮、收成下颌 -->
+  <path d="M29 37 L41 18 L53 31 L67 31 L79 18 L91 37 Q91 58 77 70 Q68 79 60 88 Q52 79 43 70 Q29 58 29 37 Z"
+        fill="#1b1013" stroke="#d2554a" stroke-width="2.4" stroke-linejoin="round"/>
+  <!-- 耳内 -->
+  <path d="M42 26 L48 35 L38 36 Z" fill="#d2554a" fill-opacity="0.32"/>
+  <path d="M78 26 L72 35 L82 36 Z" fill="#d2554a" fill-opacity="0.32"/>
+  <!-- 发光的眼 -->
+  <g filter="url(#w-glow)">
+    <path d="M46 49 L58 52.5 L46 56 Z" fill="#ffd9d4"/>
+    <path d="M74 49 L62 52.5 L74 56 Z" fill="#ffd9d4"/>
+  </g>
+  <!-- 鼻与口 -->
+  <path d="M60 63 l-4.5 5 4.5 4 4.5 -4 Z" fill="#d2554a" fill-opacity="0.55"/>
+  <path d="M52 78 q8 6 16 0" fill="none" stroke="#d2554a" stroke-width="1.8" stroke-linecap="round" stroke-opacity="0.85"/>
+</svg>

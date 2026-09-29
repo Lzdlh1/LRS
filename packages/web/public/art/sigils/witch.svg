@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="女巫">
+  <defs>
+    <radialGradient id="c-plate" cx="50%" cy="36%" r="70%">
+      <stop offset="0" stop-color="#173a31"/>
+      <stop offset="1" stop-color="#080f0d"/>
+    </radialGradient>
+    <linearGradient id="c-ring" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9ff0cd"/>
+      <stop offset="1" stop-color="#2f8f6c"/>
+    </linearGradient>
+    <linearGradient id="c-liquid" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7bf0c4"/>
+      <stop offset="1" stop-color="#2f8f6c"/>
+    </linearGradient>
+    <filter id="c-glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="2.4" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <circle cx="60" cy="60" r="52" fill="url(#c-plate)"/>
+  <circle cx="60" cy="60" r="52" fill="none" stroke="url(#c-ring)" stroke-width="2.4" stroke-opacity="0.75"/>
+  <circle cx="60" cy="60" r="45" fill="none" stroke="#58d3a6" stroke-opacity="0.28" stroke-width="1"/>
+
+  <!-- 药水瓶 -->
+  <g filter="url(#c-glow)">
+    <rect x="53" y="24" width="14" height="12" rx="3" fill="#0c1a16" stroke="#9ff0cd" stroke-width="2.2"/>
+    <path d="M53 36 L44 62 a16 16 0 0 0 32 0 L67 36 Z"
+          fill="rgba(88,211,166,0.14)" stroke="#9ff0cd" stroke-width="2.6" stroke-linejoin="round"/>
+  </g>
+  <!-- 液面与气泡 -->
+  <path d="M48 66 a16 16 0 0 0 24 0 a18 18 0 0 0 -24 0 Z" fill="url(#c-liquid)" fill-opacity="0.55"/>
+  <circle cx="52" cy="72" r="2.6" fill="#9ff0cd" opacity="0.9"/>
+  <circle cx="66" cy="78" r="1.8" fill="#9ff0cd" opacity="0.7"/>
+  <circle cx="60" cy="62" r="1.6" fill="#9ff0cd" opacity="0.6"/>
+  <!-- 雾气 -->
+  <g fill="none" stroke="#9ff0cd" stroke-opacity="0.5" stroke-width="1.6" stroke-linecap="round">
+    <path d="M52 20 q4 -6 0 -11"/>
+    <path d="M68 20 q-4 -6 0 -11"/>
+  </g>
+</svg>

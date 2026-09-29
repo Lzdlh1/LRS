@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="猎人">
+  <defs>
+    <radialGradient id="h-plate" cx="50%" cy="36%" r="70%">
+      <stop offset="0" stop-color="#3d3320"/>
+      <stop offset="1" stop-color="#100d08"/>
+    </radialGradient>
+    <linearGradient id="h-ring" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f0d79a"/>
+      <stop offset="1" stop-color="#9a7a35"/>
+    </linearGradient>
+    <filter id="h-glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="2.2" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <circle cx="60" cy="60" r="52" fill="url(#h-plate)"/>
+  <circle cx="60" cy="60" r="52" fill="none" stroke="url(#h-ring)" stroke-width="2.4" stroke-opacity="0.75"/>
+  <circle cx="60" cy="60" r="45" fill="none" stroke="#d9b26a" stroke-opacity="0.28" stroke-width="1"/>
+
+  <!-- 准星 -->
+  <g filter="url(#h-glow)" fill="none" stroke="#d9b26a" stroke-linecap="round">
+    <circle cx="60" cy="60" r="21" stroke-width="2.4"/>
+    <circle cx="60" cy="60" r="4.2" fill="#f0d79a" stroke="none"/>
+    <path d="M60 30 V43" stroke-width="2.6"/>
+    <path d="M60 77 V90" stroke-width="2.6"/>
+    <path d="M30 60 H43" stroke-width="2.6"/>
+    <path d="M77 60 H90" stroke-width="2.6"/>
+  </g>
+</svg>

@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="预言家">
+  <defs>
+    <radialGradient id="s-plate" cx="50%" cy="36%" r="70%">
+      <stop offset="0" stop-color="#243055"/>
+      <stop offset="1" stop-color="#0a0e1a"/>
+    </radialGradient>
+    <linearGradient id="s-ring" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#c3cdff"/>
+      <stop offset="1" stop-color="#5d6cb8"/>
+    </linearGradient>
+    <filter id="s-glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="2.6" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <circle cx="60" cy="60" r="52" fill="url(#s-plate)"/>
+  <circle cx="60" cy="60" r="52" fill="none" stroke="url(#s-ring)" stroke-width="2.4" stroke-opacity="0.75"/>
+  <circle cx="60" cy="60" r="45" fill="none" stroke="#93a4ff" stroke-opacity="0.3" stroke-width="1"/>
+
+  <!-- 眼 -->
+  <path d="M26 60 Q60 33 94 60 Q60 87 26 60 Z"
+        fill="rgba(147,164,255,0.12)" stroke="#93a4ff" stroke-width="2.6" stroke-linejoin="round"/>
+  <g filter="url(#s-glow)">
+    <circle cx="60" cy="60" r="13" fill="rgba(147,164,255,0.22)" stroke="#93a4ff" stroke-width="2.4"/>
+    <circle cx="60" cy="60" r="5.6" fill="#e8edff"/>
+  </g>
+  <!-- 睫毛/光芒 -->
+  <g stroke="#93a4ff" stroke-linecap="round" stroke-width="2" opacity="0.7">
+    <path d="M60 26 V18"/>
+    <path d="M38 34 L33 27"/>
+    <path d="M82 34 L87 27"/>
+    <path d="M30 52 L22 49"/>
+    <path d="M90 52 L98 49"/>
+  </g>
+</svg>

@@ -10,6 +10,7 @@ import SeatColumn from './components/SeatColumn.vue';
 import SettingsPanel from './components/SettingsPanel.vue';
 import StageOverlay from './components/StageOverlay.vue';
 import UsagePanel from './components/UsagePanel.vue';
+import VoteMap from './components/VoteMap.vue';
 import { formatEvent, buildAckCard, type EventLine } from './format';
 import {
   isNightPhase,
@@ -127,6 +128,27 @@ const spokeSeconds = computed(() => {
   }
   return out;
 });
+
+/** 投票阶段才画票型图，别的时候不占地方 */
+const VOTE_PHASES: Phase[] = ['CHIEF_VOTE', 'CHIEF_PK_VOTE', 'DAY_VOTE', 'DAY_PK_VOTE'];
+
+/**
+ * 本轮票型。`voted` 事件是公开的（谁投给谁本来就会念出来），
+ * 这里只按「当天」筛出来，不做任何推断。
+ */
+const votePairs = computed(() => {
+  const day = state.value?.day ?? -1;
+  const out: { seat: number; target: number | 'abstain' }[] = [];
+  for (const event of events.value) {
+    if (event.day !== day) continue;
+    if (event.payload.t === 'voted') out.push({ seat: event.payload.seat, target: event.payload.target });
+  }
+  return out;
+});
+
+const showVoteMap = computed(
+  () => Boolean(state.value) && VOTE_PHASES.includes(state.value!.phase) && votePairs.value.length > 0,
+);
 
 /** 狼队友是不是已经「碰过面」：狼人睁眼那一刻就算认识了，之前（准备 / 守卫）还不知道 */
 const teammatesKnown = computed(() => {
@@ -412,6 +434,7 @@ function abort(): void {
       />
 
       <div class="center">
+        <VoteMap v-if="showVoteMap" :seats="state!.seats" :votes="votePairs" />
         <EventLog :lines="lines" :streaming="streaming" />
         <ActionPanel
           :state="state"

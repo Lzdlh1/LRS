@@ -1,21 +1,23 @@
 // 把 IDE 生图接口的成品抓成静态资源。
 //
-// 关键：URL 必须与「在 IDE 预览里成功出图的那次」逐字一致 —— 接口按 URL 缓存，
-// 自己先请求只会拿到 "The image is generating..." 占位图，等 IDE 那边兑现后，
-// 用同一个 URL 再来一次就能拿到真图。
+// 关键：URL 必须与「在 IDE 预览里成功出图的那次」逐字一致 —— 接口按 URL 缓存。
+// 自己先请求只会拿到 "The image is generating..." 占位图；等 IDE 那边兑现之后，
+// 用同一个 URL 再来一次才是真图。**千万不要给 URL 加随机参数**，那是另一个 URL，等于又开一个新任务。
 //
 // 用法：node harvest.mjs            抓所有还缺的
 //       node harvest.mjs --probe    只看状态，不落盘
 import { createHash } from 'node:crypto';
-import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 const BASE = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image';
-const OUT_DIR = resolve('../../packages/web/public/art/portraits');
-const STYLE = 'comic book illustration, clean ink line art, cel shading, dramatic side lighting, full body, plain flat two tone background';
+const ART = resolve('../../packages/web/public/art');
 
-/** 立绘清单。prompt 必须与 tools/art/gen-preview.html 里的逐字一致，否则缓存命中不了 */
-const ITEMS = [
+const STYLE = 'comic book illustration, clean ink line art, cel shading, dramatic side lighting, full body, plain flat two tone background';
+const SCENE_STYLE = 'comic book illustration, clean ink line art, cel shading, flat colors, wide establishing shot, empty sky in the upper half, no people, no text';
+
+/** 立绘：与 tools/art/gen-preview.html 里的提示词逐字一致，否则命中不了缓存 */
+const PORTRAITS = [
   ['werewolf', 'full body anthropomorphic werewolf character, muscular wolf man with grey fur and glowing yellow eyes, torn dark clothes, digitigrade legs with claws, ' + STYLE],
   ['seer', 'full body illustration of a young seer woman in a hooded robe holding a glowing crystal ball, mysterious, ' + STYLE],
   ['witch', 'full body illustration of a witch woman with potion bottles and a wooden staff, dark green cloak, ' + STYLE],
@@ -24,46 +26,65 @@ const ITEMS = [
   ['villager', 'full body illustration of an ordinary young villager holding a lantern, simple clothes, ' + STYLE],
 ];
 
-const SIZE = 'portrait_16_9';
-// 占位图的 sha1（"The image is generating..." 那张）。同尺寸下它是固定资源。
+/** 昼夜背景：给人看的是氛围，所以不要人物，上方留空给 UI */
+const SCENES = [
+  ['night', 'dark pine forest clearing under a full moon at night, a lone wolf silhouette on a rocky ridge in the foreground, deep navy and cool grey palette, ' + SCENE_STYLE],
+  ['day', 'medieval village at the edge of a pine forest in daytime, thatched roofs and a dirt road, warm muted palette, ' + SCENE_STYLE],
+];
+
+const GROUPS = [
+  { dir: resolve(ART, 'portraits'), size: 'portrait_16_9', items: PORTRAITS },
+  { dir: resolve(ART, 'scenes'), size: 'landscape_16_9', items: SCENES },
+];
+
+// 占位图的字节长度（"The image is generating..." 那张，image_size=portrait_16_9 时是 176626）。
+// 接口是按尺寸给不同占位图的，所以对别的尺寸给个上限兜底：明显偏小/偏大都当没生成好。
+const PLACEHOLDER_LEN = Number(process.env.PLACEHOLDER_LEN || 176626);
 const PLACEHOLDER_SHA1 = process.env.PLACEHOLDER_SHA1 || '';
 
 const probe = process.argv.includes('--probe');
-if (!probe) mkdirSync(OUT_DIR, { recursive: true });
-
 const sha1 = (buf) => createHash('sha1').update(buf).digest('hex');
+
 let ok = 0;
 let waiting = 0;
+let total = 0;
 
-for (const [name, prompt] of ITEMS) {
-  const url = `${BASE}?prompt=${encodeURIComponent(prompt)}&image_size=${SIZE}`;
-  const file = resolve(OUT_DIR, `${name}.png`);
-  if (!probe && existsSync(file)) {
-    console.log(`[skip] ${name} 已有文件`);
-    ok += 1;
-    continue;
-  }
-  try {
-    const res = await fetch(url);
-    const buf = Buffer.from(await res.arrayBuffer());
-    const hash = sha1(buf);
-    const isPlaceholder = PLACEHOLDER_SHA1 ? hash === PLACEHOLDER_SHA1 : buf.length === 176626;
-    if (isPlaceholder) {
-      waiting += 1;
-      console.log(`[wait] ${name} 还是占位图（${buf.length}B）—— 先在 IDE 预览里把这张刷出来`);
+for (const group of GROUPS) {
+  if (!probe) mkdirSync(group.dir, { recursive: true });
+  for (const [name, prompt] of group.items) {
+    total += 1;
+    const url = `${BASE}?prompt=${encodeURIComponent(prompt)}&image_size=${group.size}`;
+    const existing = ['.jpg', '.png'].map((e) => resolve(group.dir, `${name}${e}`)).find((p) => existsSync(p));
+    if (!probe && existing) {
+      console.log(`[skip] ${name} 已有文件`);
+      ok += 1;
       continue;
     }
-    if (probe) {
-      console.log(`[ok]   ${name} 真图 ${buf.length}B sha1=${hash.slice(0, 8)}`);
-    } else {
-      mkdirSync(dirname(file), { recursive: true });
-      writeFileSync(file, buf);
-      console.log(`[ok]   ${name} -> ${file} (${buf.length}B)`);
+    try {
+      const res = await fetch(url);
+      const buf = Buffer.from(await res.arrayBuffer());
+      const hash = sha1(buf);
+      const tooSmall = buf.length < 40000;
+      const isPlaceholder = PLACEHOLDER_SHA1 ? hash === PLACEHOLDER_SHA1 : buf.length === PLACEHOLDER_LEN || tooSmall;
+      if (isPlaceholder) {
+        waiting += 1;
+        console.log(`[wait] ${name} 还是占位图（${buf.length}B）—— 先在 IDE 预览里把这张刷出来`);
+        continue;
+      }
+      const ext = (res.headers.get('content-type') || '').includes('jpeg') ? 'jpg' : 'png';
+      const file = resolve(group.dir, `${name}.${ext}`);
+      if (probe) {
+        console.log(`[ok]   ${name} 真图 ${buf.length}B ${ext} sha1=${hash.slice(0, 8)}`);
+      } else {
+        mkdirSync(dirname(file), { recursive: true });
+        writeFileSync(file, buf);
+        console.log(`[ok]   ${name} -> ${file} (${buf.length}B)`);
+      }
+      ok += 1;
+    } catch (e) {
+      console.log(`[fail] ${name} ${e.message}`);
     }
-    ok += 1;
-  } catch (e) {
-    console.log(`[fail] ${name} ${e.message}`);
   }
 }
 
-console.log(`\n合计：就绪 ${ok} / 待生成 ${waiting} / 共 ${ITEMS.length}`);
+console.log(`\n合计：就绪 ${ok} / 待生成 ${waiting} / 共 ${total}`);

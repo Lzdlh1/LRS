@@ -17,6 +17,8 @@
   figure { margin:0; }
   .box { width:200px; height:300px; border:1px solid #2c2a24; border-radius:4px;
          background:#0c0c0a; overflow:hidden; }
+  .box.wide { width:420px; height:236px; }
+  h2.sec { font-size:13px; font-weight:600; color:#c9c0ab; margin:20px 0 8px; }
   .box img { width:100%; height:100%; object-fit:cover; display:block; }
   figcaption { color:#9a917f; margin-top:6px; font-size:12px; font-weight:600; color:#c9c0ab; }
   .tip { color:#6f6a5e; font-size:11px; }
@@ -33,15 +35,18 @@
   <button id="all">全部重取</button>
   <span class="tip">如果某一张反复都是灰底，单独点它下面的「重取」</span>
 </div>
+<h2 class="sec">六角色立绘</h2>
 <div class="row" id="row"></div>
+<h2 class="sec">昼夜场景</h2>
+<div class="row" id="scenes"></div>
 
 <script>
 const BASE = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image';
-const SIZE = 'portrait_16_9';
 const STYLE = 'comic book illustration, clean ink line art, cel shading, dramatic side lighting, full body, plain flat two tone background';
+const SCENE_STYLE = 'comic book illustration, clean ink line art, cel shading, flat colors, wide establishing shot, empty sky in the upper half, no people, no text';
 
-/* 这六条必须与 tools/art/harvest.mjs 里的逐字一致：接口按 URL 缓存，差一个字符就是另一次生成 */
-const ITEMS = [
+/* 这些提示词必须与 tools/art/harvest.mjs 里的逐字一致：接口按 URL 缓存，差一个字符就是另一次生成 */
+const PORTRAITS = [
   ['狼人 werewolf', 'full body anthropomorphic werewolf character, muscular wolf man with grey fur and glowing yellow eyes, torn dark clothes, digitigrade legs with claws, ' + STYLE],
   ['预言家 seer', 'full body illustration of a young seer woman in a hooded robe holding a glowing crystal ball, mysterious, ' + STYLE],
   ['女巫 witch', 'full body illustration of a witch woman with potion bottles and a wooden staff, dark green cloak, ' + STYLE],
@@ -50,25 +55,36 @@ const ITEMS = [
   ['村民 villager', 'full body illustration of an ordinary young villager holding a lantern, simple clothes, ' + STYLE],
 ];
 
-const row = document.getElementById('row');
-for (const [label, prompt] of ITEMS) {
-  const url = BASE + '?prompt=' + encodeURIComponent(prompt) + '&image_size=' + SIZE;
-  const fig = document.createElement('figure');
-  const box = document.createElement('div');
-  box.className = 'box';
-  const img = document.createElement('img');
-  img.alt = label;
-  box.appendChild(img);
-  const cap = document.createElement('figcaption');
-  cap.textContent = label;
-  const btn = document.createElement('button');
-  btn.textContent = '重取';
-  // 占位图上写的就是「refresh page to preview」，所以重取一律走整页刷新；
-  // 千万不要给 URL 加随机参数 —— 那是另一个 URL，等于又开一个新任务，永远等不到。
-  btn.onclick = () => location.reload();
-  fig.append(box, cap, btn);
-  row.appendChild(fig);
+const SCENES = [
+  ['夜 night', 'dark pine forest clearing under a full moon at night, a lone wolf silhouette on a rocky ridge in the foreground, deep navy and cool grey palette, ' + SCENE_STYLE],
+  ['昼 day', 'medieval village at the edge of a pine forest in daytime, thatched roofs and a dirt road, warm muted palette, ' + SCENE_STYLE],
+];
+
+function fill(hostId, items, size, wide) {
+  const row = document.getElementById(hostId);
+  for (const [label, prompt] of items) {
+    const url = BASE + '?prompt=' + encodeURIComponent(prompt) + '&image_size=' + size;
+    const fig = document.createElement('figure');
+    const box = document.createElement('div');
+    box.className = 'box' + (wide ? ' wide' : '');
+    const img = document.createElement('img');
+    img.alt = label;
+    img.src = url;
+    box.appendChild(img);
+    const cap = document.createElement('figcaption');
+    cap.textContent = label;
+    const btn = document.createElement('button');
+    btn.textContent = '重取';
+    // 占位图上写的就是「refresh page to preview」，所以重取一律走整页刷新；
+    // 千万不要给 URL 加随机参数 —— 那是另一个 URL，等于又开一个新任务，永远等不到。
+    btn.onclick = () => location.reload();
+    fig.append(box, cap, btn);
+    row.appendChild(fig);
+  }
 }
+
+fill('row', PORTRAITS, 'portrait_16_9', false);
+fill('scenes', SCENES, 'landscape_16_9', true);
 
 document.getElementById('all').onclick = () => location.reload();
 </script>

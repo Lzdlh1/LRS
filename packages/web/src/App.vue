@@ -531,8 +531,8 @@ function abort(): void {
 
 /*
  * 昼夜底色做两层叠着淡入淡出，比切换 background-image 平滑。
- * 白天/夜晚要**一眼分得出**（参考网易那版：同一间屋子，白天有斜进来的天光、夜里是月光和星点）。
- * 底子仍然偏暗 —— 面板、站位卡都是暗底的，背景一白就全糊了。
+ * 图是 AI 生的漫画场景（狼在月光松林里 / 白天的村子），上面压一层深色纱 ——
+ * 纱是必须的：面板、站位卡都是暗底的，背景一亮就全糊了。
  */
 .bg {
   position: absolute;
@@ -544,59 +544,14 @@ function abort(): void {
 
 .bg-night {
   background:
-    radial-gradient(circle at 20% 10%, #efe6d2 0 4.4vmin, rgba(239, 230, 210, 0) 4.4vmin),
-    radial-gradient(circle at 20% 10%, rgba(222, 232, 255, 0.2) 0%, rgba(147, 164, 255, 0.07) 18%, transparent 40%),
-    radial-gradient(1.6px 1.6px at 12% 15%, rgba(255, 255, 255, 0.7), transparent 100%),
-    radial-gradient(1.3px 1.3px at 30% 8%, rgba(255, 255, 255, 0.5), transparent 100%),
-    radial-gradient(1.7px 1.7px at 46% 21%, rgba(255, 255, 255, 0.55), transparent 100%),
-    radial-gradient(1.2px 1.2px at 62% 10%, rgba(255, 255, 255, 0.45), transparent 100%),
-    radial-gradient(1.5px 1.5px at 85% 19%, rgba(255, 255, 255, 0.5), transparent 100%),
-    radial-gradient(1.3px 1.3px at 72% 30%, rgba(255, 255, 255, 0.35), transparent 100%),
-    radial-gradient(2.2px 2.2px at 8% 32%, rgba(255, 255, 255, 0.75), transparent 100%),
-    radial-gradient(1.1px 1.1px at 38% 12%, rgba(255, 255, 255, 0.4), transparent 100%),
-    radial-gradient(1.9px 1.9px at 55% 27%, rgba(255, 255, 255, 0.6), transparent 100%),
-    radial-gradient(1.2px 1.2px at 92% 9%, rgba(255, 255, 255, 0.45), transparent 100%),
-    linear-gradient(180deg, #0a0f1a 0%, #05070c 100%);
+    linear-gradient(180deg, rgba(4, 7, 12, 0.94) 0%, rgba(4, 7, 12, 0.74) 46%, rgba(4, 7, 12, 0.5) 100%),
+    url('/art/scenes/night.jpg') center bottom / cover no-repeat;
 }
 
 .bg-day {
   background:
-    radial-gradient(circle at 76% 8%, #ffe9bd 0 4.4vmin, rgba(255, 233, 189, 0) 4.4vmin),
-    radial-gradient(circle at 76% 8%, rgba(255, 216, 156, 0.28) 0%, rgba(255, 196, 120, 0.11) 20%, transparent 44%),
-    repeating-linear-gradient(104deg, rgba(255, 226, 176, 0.05) 0 2px, transparent 2px 26px),
-    linear-gradient(180deg, #2b3a55 0%, #1a2434 54%, #0f1622 100%);
-}
-
-/*
- * 木刻地平线（美术方向 C）：纯平涂 SVG，贴底按宽度铺。
- * 画幅 1800×220 —— 地平线落在屏幕底部约 1/6，不跟面板抢地方。
- * 窄屏按宽度铺会细成一条线，改成按高度铺、贴左，狼才看得见。
- */
-.bg-night::after,
-.bg-day::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  aspect-ratio: 1800 / 220;
-  background-repeat: no-repeat;
-  background-position: bottom center;
-  background-size: 100% auto;
-  pointer-events: none;
-}
-
-.bg-night::after { background-image: url('/art/scene-night.svg'); }
-.bg-day::after { background-image: url('/art/scene-day.svg'); }
-
-@media (max-width: 640px) {
-  .bg-night::after,
-  .bg-day::after {
-    aspect-ratio: auto;
-    height: 20vh;
-    background-size: auto 100%;
-    background-position: left bottom;
-  }
+    linear-gradient(180deg, rgba(6, 10, 16, 0.92) 0%, rgba(6, 10, 16, 0.72) 46%, rgba(6, 10, 16, 0.48) 100%),
+    url('/art/scenes/day.jpg') center bottom / cover no-repeat;
 }
 
 .bar {

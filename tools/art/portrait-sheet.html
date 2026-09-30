@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
@@ -61,7 +61,7 @@ const ROLES = [
   ['guard', '守卫', 'guard'],
   ['villager', '村民', 'villager'],
 ];
-const src = (f) => `/packages/web/public/art/portraits/${f}.png`;
+const src = (f) => `/packages/web/public/art/portraits/${f}.jpg`;
 /** 取景：全身方图放大 340% 后，把镜头对到脸上。狼人的头偏右，单独给一格 */
 const CROP = { werewolf: '64% -4%' };
 const cropOf = (r) => CROP[r] ?? '50% -2%';

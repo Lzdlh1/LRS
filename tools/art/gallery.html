@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
@@ -37,7 +37,7 @@
 <h1>美术试色 · 看图</h1>
 <p class="hint">全部是 p5 + p5.brush 无头渲染出的静帧，非成图，只用来判断方向。</p>
 
-<h2>AI 立绘 · 六角色 <span>portraits/*.png</span></h2>
+<h2>AI 立绘 · 六角色 <span>portraits/*.jpg</span></h2>
 <p class="hint">
   用 IDE 的 text_to_image 接口生成的（描线 + 平涂分色）。流程记在 <code>tools/art/harvest.mjs</code>：
   接口按 URL 缓存，先请求只会拿到"生成中"占位图，得让 IDE 预览把图刷出来，再用同一个 URL 抓真图。
@@ -52,7 +52,7 @@
     const f = document.createElement('figure');
     f.className = 'w3';
     f.style.flex = '1 1 150px';
-    f.innerHTML = `<img src="/packages/web/public/art/portraits/${file}.png" alt="${label}">`
+    f.innerHTML = `<img src="/packages/web/public/art/portraits/${file}.jpg" alt="${label}">`
       + `<figcaption>${label}</figcaption>`;
     box.appendChild(f);
   }

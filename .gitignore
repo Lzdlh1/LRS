@@ -32,3 +32,6 @@ tools/art/node_modules/
 tools/art/.edge-profile/
 tools/art/.edge-cache/
 tools/art/out/
+# 从仓库根跑无头浏览器时会落在根目录
+.edge-profile/
+.edge-cache/

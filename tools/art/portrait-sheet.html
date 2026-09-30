@@ -2,10 +2,69 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>六角色立绘 · 联络表</title>
+<title>六角色立绘 · 取景验证台</title>
 <style>
   body { margin:0; background:#efe6d2; padding:16px;
          font:12px/1.5 "Segoe UI", "Microsoft YaHei", sans-serif; }
+  .label { font-size:12px; color:#16263f; font-weight:700; margin:0 0 8px; letter-spacing:.08em; }
+
+  /* ── 下面这段与 SeatColumn.vue 的裁切规则逐条一致，用来验取景 ── */
+  .avatars { display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap; margin-bottom:26px; }
+  .avatar {
+    position: relative; width:var(--s,44px); height:var(--s,44px); flex:none;
+    border-radius:50%; overflow:hidden;
+    background: linear-gradient(180deg,#2b3348 0%,#1e2534 100%);
+    border:1px solid #465171;
+    display:grid; place-items:center;
+  }
+  .avatar .face { position:absolute; inset:0; background-repeat:no-repeat; }
+  .avatar .num {
+    position:relative; z-index:1;
+    font:700 calc(var(--s,44px) * 0.42)/1 ui-monospace, monospace;
+    color:#e7ebf7;
+    text-shadow: 0 1px 4px rgba(0,0,0,.95), 0 0 3px rgba(0,0,0,.85);
+  }
+  /* 有立绘时：号码走底部字幕条，不再压在脸上 */
+  .avatar.faced .num {
+    position:absolute; left:0; right:0; bottom:0; z-index:2;
+    font-size:calc(var(--s,44px) * 0.25);
+    line-height:calc(var(--s,44px) * 0.34);
+    text-align:center;
+    background:linear-gradient(180deg, rgba(6,10,20,0) 0%, rgba(6,10,20,.66) 42%, rgba(6,10,20,.92) 100%);
+  }
+  /* 十字准星：眼睛该落在交点上 */
+  .avatar.cross::after {
+    content:''; position:absolute; inset:0; z-index:3; pointer-events:none;
+    background:
+      linear-gradient(#ff4136,#ff4136) center / 100% 1px no-repeat,
+      linear-gradient(#ff4136,#ff4136) center / 1px 100% no-repeat;
+  }
+  .avatar.nonum .num { display: none; }
+  /* 与 SeatColumn.vue 一致：出局压暗 + 下沿一枚小章 */
+  .avatar.dead { filter: grayscale(.6) brightness(.7); }
+  .avatar.faced.dead .num { display:none; }
+  .out-chip {
+    position:absolute; left:50%; bottom:1px; transform:translateX(-50%);
+    padding:0 4px; border-radius:2px;
+    background:rgba(8,13,24,.82); border:1.5px solid #b8342a;
+    color:#e58379; font-size:9px; font-weight:700; line-height:12px;
+    white-space:nowrap; pointer-events:none;
+  }
+
+  .tile { text-align:left; }
+  .tile .cap { margin-top:5px; font-weight:700; color:#16263f; }
+  .tile .sub { color:#8c8375; font-family:ui-monospace, monospace; font-size:11px; }
+
+  .rolebox { margin-bottom:10px; }
+  .rolesub { font-weight:700; color:#16263f; margin-bottom:3px; }
+  .crossrow { display:flex; gap:10px; }
+
+  .chipface { width:22px; height:22px; border-radius:50%; overflow:hidden; position:relative;
+              background:#16263f; display:inline-block; vertical-align:middle; margin-right:6px; }
+  .chipface i { position:absolute; inset:0; background-repeat:no-repeat; }
+  .chipline { display:flex; align-items:center; gap:14px; padding:8px 12px; background:#efe6d2;
+              border:3px solid #16263f; border-radius:5px; color:#16263f; font-weight:700; font-size:11px; }
+
   .grid { display:grid; grid-template-columns:repeat(3, 300px); gap:14px; }
   figure { margin:0; }
   .box { width:300px; height:390px; background:#16263f; border:3px solid #16263f; border-radius:4px;
@@ -13,39 +72,17 @@
   .box img { width:100%; height:100%; object-fit:cover; object-position:50% 8%; display:block; }
   figcaption { margin-top:6px; font-size:13px; font-weight:700; color:#16263f; letter-spacing:.08em; }
   figcaption span { color:#8c8375; font-weight:400; }
-
-  /* ── 下面这段与 SeatColumn.vue / App.vue 里的裁切规则逐条一致，用来验取景 ── */
-  .avatars { display:flex; gap:18px; align-items:flex-end; margin-bottom:26px; }
-  .avatar {
-    position: relative; width:44px; height:44px; flex:none;
-    border-radius:50%; overflow:hidden;
-    background: linear-gradient(180deg,#2b3348 0%,#1e2534 100%);
-    border:1px solid #465171;
-    display:grid; place-items:center;
-  }
-  .avatar .face {
-    position:absolute; inset:0;
-    background-repeat:no-repeat;
-    background-size:340% auto;
-    background-position:var(--crop, 50% -2%);
-  }
-  .avatar .num {
-    position:relative; z-index:1;
-    font:700 18px/1 ui-monospace, monospace; color:#e7ebf7;
-    text-shadow: 0 1px 4px rgba(0,0,0,.95), 0 0 3px rgba(0,0,0,.85);
-  }
-  .chipface { width:22px; height:22px; border-radius:50%; overflow:hidden; position:relative;
-              background:#16263f; display:inline-block; vertical-align:middle; margin-right:6px; }
-  .chipface i { position:absolute; inset:0; background-repeat:no-repeat;
-                background-size:340% auto; background-position:var(--crop, 50% -2%); }
-  .chipline { display:flex; align-items:center; gap:14px; padding:8px 12px; background:#efe6d2;
-              border:3px solid #16263f; border-radius:5px; color:#16263f; font-weight:700; font-size:11px; }
-  .label { font-size:12px; color:#16263f; font-weight:700; margin:0 0 8px; letter-spacing:.08em; }
 </style>
 </head>
 <body>
 <p class="label">44px 座位头像（与 App 同一段裁切规则）</p>
 <div class="avatars" id="av"></div>
+
+<p class="label">同样的头像 · 出局（压暗 + 下沿小章）</p>
+<div class="avatars" id="avd"></div>
+
+<p class="label">132px 取景核对（红线交点 = 圆心；眼睛该落在交点上，画面无字幕条遮挡）</p>
+<div class="avatars" id="av3"></div>
 
 <p class="label">22px 底牌（顶栏）</p>
 <div class="chipline" id="chip"></div>
@@ -54,41 +91,108 @@
 <div class="grid" id="g"></div>
 <script>
 const ROLES = [
-  ['werewolf', '狼人', 'werewolf'],
-  ['seer', '预言家', 'seer'],
-  ['witch', '女巫', 'witch'],
-  ['hunter', '猎人', 'hunter'],
-  ['guard', '守卫', 'guard'],
-  ['villager', '村民', 'villager'],
+  ['werewolf', '狼人'],
+  ['seer', '预言家'],
+  ['witch', '女巫'],
+  ['hunter', '猎人'],
+  ['guard', '守卫'],
+  ['villager', '村民'],
 ];
-const src = (f) => `/packages/web/public/art/portraits/${f}.jpg`;
-/** 取景：全身方图放大 340% 后，把镜头对到脸上。狼人的头偏右，单独给一格 */
-const CROP = { werewolf: '64% -4%' };
-const cropOf = (r) => CROP[r] ?? '50% -2%';
+const src = (f) => `../../packages/web/public/art/portraits/${f}.jpg`;
 
-// 座位头像：立绘 + 压在胸口的座位号
+/**
+ * 取景：立绘是 768x1368 的竖图（比例 1.781）。
+ * 每个角色按「头在画面里的大小」单独定缩放 Z（宽向定标，Z% auto）：
+ *   圆窗口覆盖画面宽度 100/Z，高度 56.15/Z。
+ * 位置值把「头中心在画面里的比例 (tx, ty)」搬到圆心：
+ *   图宽 W = 0.44Z，图高 H = 0.7836Z
+ *   Px = (W*tx - 22) / (W - 44)
+ *   Py = (H*ty - 22) / (H - 44)
+ */
+const FACE = {
+  werewolf: { z: 263, tx: 0.55, ty: 0.11 },
+  seer:     { z: 222, tx: 0.47, ty: 0.13 },
+  witch:    { z: 210, tx: 0.60, ty: 0.145 },
+  hunter:   { z: 380, tx: 0.54, ty: 0.11 },
+  guard:    { z: 374, tx: 0.45, ty: 0.16 },
+  villager: { z: 340, tx: 0.45, ty: 0.175 },
+};
+function faceStyle2(r, z, tx, ty) {
+  const w = 0.44 * z;
+  const h = 0.7836 * z;
+  const px = ((w * tx - 22) / (w - 44)) * 100;
+  const py = ((h * ty - 22) / (h - 44)) * 100;
+  return `background-image:url('${src(r)}');background-size:${z}% auto;`
+    + `background-position:${px.toFixed(1)}% ${py.toFixed(1)}%`;
+}
+function faceStyle(r) {
+  const c = FACE[r];
+  return faceStyle2(r, c.z, c.tx, c.ty);
+}
+const cropText = (r) => {
+  const c = FACE[r];
+  return `z=${c.z} · t=(${c.tx},${c.ty})`;
+};
+
+function tile(file, label, size, faced, cross, nonum) {
+  const d = document.createElement('div');
+  d.className = 'tile';
+  d.innerHTML = `<div class="avatar${faced ? ' faced' : ''}${cross ? ' cross' : ''}${nonum ? ' nonum' : ''}" style="--s:${size}px">`
+    + (faced ? `<i class="face" style="${faceStyle(file)}"></i>` : '')
+    + `<span class="num">${label}</span></div>`
+    + `<div class="cap">${label}</div><div class="sub">${cropText(file)}</div>`;
+  return d;
+}
+
 const av = document.getElementById('av');
+ROLES.forEach(([file, label], i) => av.appendChild(tile(file, String(i + 1), 44, true, false, false)));
+
+// 出局态：带立绘的座位压暗 + 下沿一枚小章，号码条让位
+const avd = document.getElementById('avd');
 ROLES.forEach(([file, label], i) => {
   const d = document.createElement('div');
-  d.innerHTML = `<div class="avatar" title="${label}">`
-    + `<i class="face" style="--crop:${cropOf(file)};background-image:url('${src(file)}')"></i>`
-    + `<span class="num">${i + 1}</span></div>`;
-  av.appendChild(d);
+  d.className = 'tile';
+  d.innerHTML = `<div class="avatar faced dead" style="--s:44px">`
+    + `<i class="face" style="${faceStyle(file)}"></i>`
+    + `<span class="num">${i + 1}</span><span class="out-chip">出局</span></div>`
+    + `<div class="cap">${label}</div>`;
+  avd.appendChild(d);
+});
+
+const av3 = document.getElementById('av3');
+const CAND = [[0, 0, 'A']];
+ROLES.forEach(([file, label]) => {
+  const c = FACE[file];
+  const box = document.createElement('div');
+  box.className = 'rolebox';
+  box.innerHTML = `<div class="rolesub">${label}</div>`;
+  const row = document.createElement('div');
+  row.className = 'crossrow';
+  for (const [dx, dy, tag] of CAND) {
+    const el = document.createElement('div');
+    el.className = 'tile';
+    el.innerHTML = `<div class="avatar faced cross nonum" style="--s:132px">`
+      + `<i class="face" style="${faceStyle2(file, c.z, c.tx + dx, c.ty + dy)}"></i></div>`
+      + `<div class="sub">${tag} (${(c.tx + dx).toFixed(2)}, ${(c.ty + dy).toFixed(2)})</div>`;
+    row.appendChild(el);
+  }
+  box.appendChild(row);
+  av3.appendChild(box);
 });
 
 // 底牌小卡
 const chip = document.getElementById('chip');
 ROLES.forEach(([file, label]) => {
   const s = document.createElement('span');
-  s.innerHTML = `<span class="chipface"><i style="--crop:${cropOf(file)};background-image:url('${src(file)}')"></i></span>2 号 · ${label}`;
+  s.innerHTML = `<span class="chipface"><i style="${faceStyle(file)}"></i></span>2 号 · ${label}`;
   chip.appendChild(s);
 });
 
 const g = document.getElementById('g');
-for (const [file, label, en] of ROLES) {
+for (const [file, label] of ROLES) {
   const fig = document.createElement('figure');
   fig.innerHTML = `<div class="box"><img src="${src(file)}" alt="${label}"></div>`
-    + `<figcaption>${label} <span>${en}</span></figcaption>`;
+    + `<figcaption>${label} <span>${file}</span></figcaption>`;
   g.appendChild(fig);
 }
 </script>

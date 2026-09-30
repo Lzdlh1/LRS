@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ROLE_LABELS } from '@lrs/shared';
 import type { ClientState } from '@lrs/server/protocol';
-import { faceCrop, faceUrl } from '../faces';
+import { faceStyle } from '../faces';
 import type { SeatMark } from '../marks';
 
 type ClientSeat = ClientState['seats'][number];
@@ -62,11 +62,8 @@ function ownRoleText(item: ClientSeat): string {
           item.role 本来就是服务端按可见性裁剪过的，null 就是真的看不到。
         -->
         <span class="avatar" :class="{ faced: Boolean(item.role), dead: !item.alive }" :title="item.role ? `身份：${ROLE_LABELS[item.role]}` : ''">
-          <i
-            v-if="item.role"
-            class="face"
-            :style="{ backgroundImage: faceUrl(item.role), backgroundPosition: faceCrop(item.role) }"
-          />
+          <i v-if="item.role" class="face" :style="faceStyle(item.role)" />
+          <!-- 有立绘时号码改走头像下沿的字幕条（见 .avatar.faced .num），不再压在脸上 -->
           <span class="num">{{ item.seat }}</span>
           <!-- 出局章只盖在头像下沿：原来那枚斜章压在脸正中，把立绘整个挡掉了，
                而且比圆形还宽，看着像坐标错乱 -->
@@ -202,8 +199,9 @@ function ownRoleText(item: ClientSeat): string {
 
 /*
  * 已知身份时头像换成角色立绘。
- * 取景规则（放大与对位）在 ../faces.ts：立绘是全身方图，不放大就只能看出一团颜色；
- * 座位号压在胸口上，靠描边保证在浅色立绘上也能读。
+ * 取景规则（放大倍数与对位）在 ../faces.ts：立绘是竖构图全身像，
+ * 不放大、不对位就只能看出一团颜色或者一片空白。
+ * 缩放与位置都是逐角色算好的，走 inline style，这里只管裁圆。
  */
 .avatar.faced {
   overflow: hidden;
@@ -213,15 +211,32 @@ function ownRoleText(item: ClientSeat): string {
   position: absolute;
   inset: 0;
   background-repeat: no-repeat;
-  background-size: 340% auto;
   pointer-events: none;
 }
 
+/* 有立绘时号码走头像下沿的字幕条：压在脸正中的大号数字会把五官挡掉 */
 .avatar.faced .num {
-  position: relative;
-  text-shadow:
-    0 1px 4px rgba(0, 0, 0, 0.95),
-    0 0 3px rgba(0, 0, 0, 0.85);
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  padding-top: calc(var(--avatar) * 0.14);
+  font-size: calc(var(--avatar) * 0.25);
+  line-height: calc(var(--avatar) * 0.33);
+  text-align: center;
+  background: linear-gradient(
+    180deg,
+    rgba(6, 10, 20, 0) 0%,
+    rgba(6, 10, 20, 0.62) 46%,
+    rgba(6, 10, 20, 0.9) 100%
+  );
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+/* 出局的有立绘座位：下沿已经让给「出局」章，号码看名字行就够了，两条叠一起会糊成一块 */
+.avatar.faced.dead .num {
+  display: none;
 }
 
 /* 自己的座位：实心青玉「我」牌，比边框加粗更认得出 */

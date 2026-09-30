@@ -32,7 +32,17 @@ const page = await browser.newPage();
 await page.setViewport({ width: VW, height: VH, deviceScaleFactor: 2 });
 page.on('pageerror', (e) => console.log('[pageerror]', e.message));
 await page.goto(TARGET, { waitUntil: 'load', timeout: 60000 });
-await new Promise((r) => setTimeout(r, 7000));
+await new Promise((r) => setTimeout(r, 5000));
+
+// 先暂停：无头浏览器连上去也算一个观看端，真人回合会走超时兜底，AI 会一路打到结束（烧 key）
+await page.evaluate(() => {
+  const btn = [...document.querySelectorAll('button')].find((b) => /暂停/.test(b.textContent));
+  if (btn) btn.click();
+});
+await new Promise((r) => setTimeout(r, 800));
+console.log('[pause] 已点暂停（如果有这个按钮）');
+
+await new Promise((r) => setTimeout(r, 2200));
 
 // 座位列单独截一张（2 倍精度）：光看 dump 看不出"空白和坐标错"长什么样
 const wantGod = process.argv.includes('god');
@@ -133,8 +143,13 @@ const out = await page.evaluate(() => {
       return { w: Math.round(r.width), h: Math.round(r.height) };
     };
     const cs = face ? getComputedStyle(face) : null;
+    const sc = getComputedStyle(seat);
     return {
       seat: (seat.querySelector('.num')?.textContent || '').trim(),
+      cls: seat.className,
+      outline: `${sc.outlineStyle} ${sc.outlineWidth} ${sc.outlineColor}`,
+      border: `${sc.borderTopStyle} ${sc.borderTopWidth} ${sc.borderTopColor}`,
+      shadow: sc.boxShadow.slice(0, 64),
       texts: [...seat.querySelectorAll('span')].map((s) => s.textContent.trim()).filter(Boolean),
       avatar: rect(avatar),
       face: rect(face),

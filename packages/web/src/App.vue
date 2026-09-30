@@ -13,7 +13,7 @@ import StageOverlay from './components/StageOverlay.vue';
 import UsagePanel from './components/UsagePanel.vue';
 import VoteMap from './components/VoteMap.vue';
 import { formatEvent, buildAckCard, type EventLine } from './format';
-import { faceCrop, faceUrl } from './faces';
+import { faceStyle } from './faces';
 import {
   isNightPhase,
   nightStepLabel,
@@ -380,7 +380,7 @@ function abort(): void {
       <!-- 底牌：自己的身份做成一张米纸小卡，左边是自己的立绘（只有自己看得到，不会泄漏） -->
       <span v-if="myRole && !godView" class="chip mine">
         <span class="mine-face">
-          <i :style="{ backgroundImage: faceUrl(myRole), backgroundPosition: faceCrop(myRole) }" />
+          <i :style="faceStyle(myRole)" />
         </span>
         {{ humanSeat }} 号 · {{ ROLE_LABELS[myRole] }}
       </span>
@@ -645,7 +645,6 @@ function abort(): void {
   position: absolute;
   inset: 0;
   background-repeat: no-repeat;
-  background-size: 340% auto;
 }
 
 /* 夜间那一步的固定倒计时 */

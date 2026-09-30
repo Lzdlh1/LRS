@@ -61,20 +61,24 @@ function ownRoleText(item: ClientSeat): string {
           角色拿不到时一律退回号码 —— 所以这里不可能泄漏：
           item.role 本来就是服务端按可见性裁剪过的，null 就是真的看不到。
         -->
-        <span class="avatar" :class="{ faced: Boolean(item.role) }" :title="item.role ? `身份：${ROLE_LABELS[item.role]}` : ''">
+        <span class="avatar" :class="{ faced: Boolean(item.role), dead: !item.alive }" :title="item.role ? `身份：${ROLE_LABELS[item.role]}` : ''">
           <i
             v-if="item.role"
             class="face"
             :style="{ backgroundImage: faceUrl(item.role), backgroundPosition: faceCrop(item.role) }"
           />
           <span class="num">{{ item.seat }}</span>
+          <!-- 出局章只盖在头像下沿：原来那枚斜章压在脸正中，把立绘整个挡掉了，
+               而且比圆形还宽，看着像坐标错乱 -->
+          <span v-if="!item.alive" class="out-chip">出局</span>
         </span>
-        <!-- 出局：盖一枚朱砂「出局」章。原来那个 ✕ 在小头像上几乎看不见 -->
-        <span v-if="!item.alive" class="out-stamp">出局</span>
         <!-- 自己那个座位一眼要认得出来：不写「我」，就得回头翻日志数座位 -->
         <span v-if="item.seat === humanSeat" class="me-tag">我</span>
         <span v-if="item.isChief" class="chief-mark" title="警长">🎖</span>
-        <!-- 身份标记压在头像上：给得大一点，手机上才看得清 -->
+      </span>
+
+      <!-- 阵营印与夜况角标放在名字行里：压在头像上会把立绘的脸挡掉 -->
+      <span class="name" :class="{ own: item.seat === humanSeat }">
         <span
           v-if="markOf(item.seat)?.camp"
           class="mark"
@@ -83,12 +87,8 @@ function ownRoleText(item: ClientSeat): string {
         >
           {{ markOf(item.seat)?.camp === 'wolf' ? '狼' : '好' }}
         </span>
+        <b class="nm">{{ item.seat === humanSeat ? ownRoleText(item) : item.name }}</b>
         <span v-if="markOf(item.seat)?.note" class="note" :title="markOf(item.seat)?.note ?? ''">🗡</span>
-      </span>
-
-      <!-- 自己的底牌直接写在名字的位置上（「玩家N」这种名字没有信息量） -->
-      <span class="name" :class="{ own: item.seat === humanSeat }">
-        {{ item.seat === humanSeat ? ownRoleText(item) : item.name }}
       </span>
       <span v-if="pickable(item.seat)" class="say">{{ targets[item.seat]?.[0] }}</span>
       <!-- 能点的时候优先让位给「点这里」，否则显示上次发言用时 -->
@@ -162,8 +162,8 @@ function ownRoleText(item: ClientSeat): string {
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: linear-gradient(180deg, #2b3348 0%, #1e2534 100%);
-  border: 1px solid #465171;
+  background: linear-gradient(180deg, var(--avatar-1) 0%, var(--avatar-2) 100%);
+  border: 1px solid var(--avatar-line);
   display: grid;
   place-items: center;
   transition:
@@ -181,11 +181,20 @@ function ownRoleText(item: ClientSeat): string {
   color: #e7ebf7;
 }
 
+/* 名字行：阵营印与夜况角标排在这里，所以是个行内弹性盒子 */
 .name {
   max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   font-size: 10.5px;
   line-height: 1.25;
   color: var(--text-faint);
+}
+
+.name .nm {
+  min-width: 0;
+  font-weight: inherit;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -249,22 +258,18 @@ function ownRoleText(item: ClientSeat): string {
   filter: drop-shadow(0 0 3px rgba(217, 178, 106, 0.6));
 }
 
-/* 已知阵营：压在头像下沿。木刻方角印 —— 狼是朱砂、好人是青玉 */
+/* 已知阵营：木刻方角小印，排在名字前面（不再压头像） */
 .mark {
-  position: absolute;
-  left: 50%;
-  bottom: -5px;
-  transform: translateX(-50%);
-  padding: 0 6px;
-  min-width: 22px;
+  flex: none;
+  min-width: 15px;
+  padding: 0 3px;
   border-radius: 2px;
-  border: 2px solid #16263f;
-  font-size: 12px;
+  border: 1.5px solid #16263f;
+  font-size: 10px;
   font-weight: 700;
-  line-height: 15px;
+  line-height: 13px;
   text-align: center;
   white-space: nowrap;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
 }
 
 .mark.wolf {
@@ -278,29 +283,30 @@ function ownRoleText(item: ClientSeat): string {
 }
 
 .note {
-  position: absolute;
-  right: -4px;
-  bottom: -4px;
-  font-size: 11px;
+  flex: none;
+  font-size: 10px;
   line-height: 1;
-  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.8));
 }
 
-/* 出局章：斜盖在头像上。小头像里那个 ✕ 根本看不清，改成两个字才读得出来 */
-.out-stamp {
+/* 出局：头像整体压暗，下沿盖一枚小章 —— 章不压脸、也不出圆形边界 */
+.avatar.dead {
+  filter: grayscale(0.6) brightness(0.7);
+}
+
+.avatar .out-chip {
   position: absolute;
   left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%) rotate(-14deg);
-  padding: 0 5px;
-  border: 2px solid #b8342a;
+  bottom: 1px;
+  transform: translateX(-50%);
+  padding: 0 4px;
   border-radius: 2px;
-  background: rgba(8, 13, 24, 0.68);
+  background: rgba(8, 13, 24, 0.82);
+  border: 1.5px solid #b8342a;
   color: #e58379;
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 700;
-  line-height: 15px;
-  letter-spacing: 0.06em;
+  line-height: 12px;
+  letter-spacing: 0.04em;
   white-space: nowrap;
   pointer-events: none;
 }

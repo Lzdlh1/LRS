@@ -119,7 +119,7 @@ function submitSpeech(): void {
 <style scoped>
 .panel {
   flex: none;
-  background: linear-gradient(180deg, rgba(18, 22, 31, 0.96) 0%, rgba(10, 13, 20, 0.96) 100%);
+  background: linear-gradient(180deg, var(--surface-panel) 0%, var(--surface-panel-2) 100%);
   backdrop-filter: blur(8px);
   border-radius: var(--radius);
   border: 1px solid var(--line);

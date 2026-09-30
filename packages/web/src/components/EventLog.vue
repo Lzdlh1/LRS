@@ -61,7 +61,7 @@ watch(() => liveText.value.length, scrollToBottom);
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(180deg, rgba(20, 25, 36, 0.9) 0%, rgba(14, 18, 27, 0.9) 100%);
+  background: linear-gradient(180deg, var(--surface-panel) 0%, var(--surface-panel-2) 100%);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   overflow: hidden;

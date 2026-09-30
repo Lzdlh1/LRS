@@ -272,7 +272,10 @@ describe('黄金用例：首夜 → 竞选平票 PK → 当选 → 公布死讯 
     const spokeEvents = events.filter((e) => e.payload.t === 'spoke');
 
     expect(signupEvents).toHaveLength(1);
-    expect(diedEvent?.payload).toMatchObject({ seat: 3, cause: 'wolf' });
+    // 死因对外是 null：夜里被刀的，天亮只公布「谁出局了」。
+    // 真实原因在 state 里（player.death.cause），上帝视角与复盘才看得到。
+    expect(diedEvent?.payload).toMatchObject({ seat: 3, cause: null });
+    expect(state.players.find((p) => p.seat === 3)?.death?.cause).toBe('wolf');
     // 3 号的竞选发言排在死讯之前
     expect(events.indexOf(signupEvents[0]!)).toBeLessThan(events.indexOf(diedEvent!));
 

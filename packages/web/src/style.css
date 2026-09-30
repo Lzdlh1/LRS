@@ -42,6 +42,51 @@
 
   --radius: 10px;
   --radius-sm: 7px;
+
+  /* 面板底与头像底也走令牌：昼夜换皮时，这几处是最显眼的地方 */
+  --surface-bar: rgba(10, 13, 20, 0.74);
+  --surface-panel: rgba(18, 22, 31, 0.96);
+  --surface-panel-2: rgba(10, 13, 20, 0.96);
+  --surface-chip: rgba(26, 32, 48, 0.8);
+  --avatar-1: #2b3348;
+  --avatar-2: #1e2534;
+  --avatar-line: #465171;
+}
+
+/*
+ * 白天：同一套令牌换成暖调 —— 从"冷月"换成"火光 / 日光"。
+ *
+ * 组件里写的都是 var(--xxx)，所以换皮只在这里重定义一遍，不用逐个组件改。
+ * 基调仍然是**暗底**：面板上压着浅色文字，背景一白就全糊了，
+ * 所以变的不是明暗，而是冷暖（近黑 → 暖褐，月光蓝 → 夕照金）。
+ */
+.app.day {
+  --ink-0: #0b0906;
+  --ink-1: #14100b;
+  --ink-2: #1b1610;
+
+  --panel: #1d1811;
+  --panel-2: #262019;
+  --panel-3: #322a20;
+
+  --line: #3b3226;
+  --line-2: #554837;
+
+  --text: #ece2cf;
+  --text-dim: #b0a289;
+  --text-faint: #7d7261;
+
+  --accent: #e6b063;
+  --accent-dim: #b98643;
+  --accent-soft: rgba(230, 176, 99, 0.16);
+
+  --surface-bar: rgba(24, 19, 13, 0.78);
+  --surface-panel: rgba(32, 26, 18, 0.96);
+  --surface-panel-2: rgba(18, 14, 10, 0.96);
+  --surface-chip: rgba(44, 36, 26, 0.82);
+  --avatar-1: #4a3c2b;
+  --avatar-2: #332a1f;
+  --avatar-line: #6b5941;
 }
 
 * {

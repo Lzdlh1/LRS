@@ -16,10 +16,8 @@ import { formatEvent, buildAckCard, type EventLine } from './format';
 import { faceCrop, faceUrl } from './faces';
 import {
   isNightPhase,
-  nightStepIndex,
   nightStepLabel,
   NIGHT_STEP_NAMES,
-  NIGHT_STEPS,
   PHASE_LABELS,
 } from './labels';
 import { deriveMarks } from './marks';
@@ -103,7 +101,7 @@ const phaseLabel = computed(() => {
   const current = state.value;
   if (!current) return '';
   if (isNightPhase(current.phase)) {
-    return `夜晚 ${nightStepIndex(current.phase)}/${NIGHT_STEPS.length} · ${NIGHT_STEP_NAMES[current.phase] ?? ''}`;
+    return `夜晚 · ${NIGHT_STEP_NAMES[current.phase] ?? ''}`;
   }
   return PHASE_LABELS[current.phase];
 });
@@ -563,7 +561,7 @@ function abort(): void {
   gap: 6px;
   flex-wrap: wrap;
   padding: 7px 10px;
-  background: rgba(10, 13, 20, 0.74);
+  background: var(--surface-bar);
   border-bottom: 1px solid var(--line);
   backdrop-filter: blur(8px);
 }
@@ -598,7 +596,7 @@ function abort(): void {
 .chip {
   padding: 2px 9px;
   border-radius: 999px;
-  background: rgba(26, 32, 48, 0.8);
+  background: var(--surface-chip);
   border: 1px solid var(--line);
   font-size: 11px;
   color: var(--text-dim);

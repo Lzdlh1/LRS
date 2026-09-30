@@ -28,6 +28,17 @@ export const DEATH_CAUSES = ['wolf', 'poison', 'vote', 'gun'] as const;
 export type DeathCause = (typeof DEATH_CAUSES)[number];
 export const deathCauseSchema = z.enum(DEATH_CAUSES);
 
+/**
+ * 只有「当场就已经公开」的死因才能对外说。
+ *
+ * 投票放逐：所有人都看着他被投出去；猎人带走：开枪本来就在明面上。
+ * 夜里被刀、被毒不行 —— 天亮只公布「谁出局了」，不公布为什么。
+ * 引擎在公布死讯时、投影层在裁剪状态时，都用这个函数判断。
+ */
+export function isPublicDeathCause(cause: DeathCause | null | undefined): boolean {
+  return cause === 'vote' || cause === 'gun';
+}
+
 const tallySchema = z.array(
   z.object({ seat: seatIdSchema, votes: z.number().min(0) }),
 );
@@ -145,7 +156,12 @@ export const eventPayloadSchema = z.discriminatedUnion('t', [
   z.object({
     t: z.literal('died'),
     seat: seatIdSchema,
-    cause: deathCauseSchema,
+    /**
+     * 死因。**只在「当场就已经公开」的时候才有值**：投票放逐、猎人带走。
+     * 夜里被刀、被毒，天亮只公布「谁出局了」，不公布为什么 —— 这是狼人杀的基本信息规则，
+     * 引擎在公布死讯时会把这两种原因抹成 null（真实原因仍留在状态里，供上帝视角与复盘用）。
+     */
+    cause: z.union([deathCauseSchema, z.null()]),
   }),
   z.object({
     t: z.literal('hunter_shot'),

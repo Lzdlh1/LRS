@@ -53,19 +53,10 @@ export function isNightPhase(phase: Phase): boolean {
 }
 
 /**
- * 夜间四步的固定顺序。
- *
- * 打开 `Rules.nightStepMs` 之后这四步**永远都走**（该角色出局也照走），
- * 所以「现在第几步」是公开信息，日志与流程提示都可以放心写出来。
+ * 夜间每一步的短名：去掉「夜晚 · 」前缀，因为流程提示里已经写了「夜晚」。
+ * 顺序就是引擎里那四步的顺序，但界面**不再显示第几步** ——
+ * 四步永远都走，写明轮次对玩家没有信息量，看着像进度条。
  */
-export const NIGHT_STEPS: Phase[] = ['NIGHT_GUARD', 'NIGHT_WOLF', 'NIGHT_WITCH', 'NIGHT_SEER'];
-
-/** 第几步（从 1 开始）；不是夜间阶段时返回 0 */
-export function nightStepIndex(phase: Phase): number {
-  return NIGHT_STEPS.indexOf(phase) + 1;
-}
-
-/** 夜间每一步的短名：去掉「夜晚 · 」前缀，因为流程提示里已经写了「夜晚」 */
 export const NIGHT_STEP_NAMES: Record<string, string> = {
   NIGHT_GUARD: '守卫行动',
   NIGHT_WOLF: '狼人行动',
@@ -73,9 +64,10 @@ export const NIGHT_STEP_NAMES: Record<string, string> = {
   NIGHT_SEER: '预言家验人',
 };
 
-/** 「第 2 / 4 步 · 狼人行动」这种流程提示 */
+/** 夜间每一步的流程提示：只写「谁在行动」，不写「第几步」——
+ *  四步是固定顺序、永远都走，写出轮次对玩家没有信息量，反而像在报进度条。 */
 export function nightStepLabel(phase: Phase): string {
-  return `第 ${nightStepIndex(phase)} / ${NIGHT_STEPS.length} 步 · ${NIGHT_STEP_NAMES[phase] ?? ''}`;
+  return NIGHT_STEP_NAMES[phase] ?? PHASE_LABELS[phase] ?? '';
 }
 
 export function seatLabel(seat: number): string {

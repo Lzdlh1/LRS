@@ -1,4 +1,4 @@
-import { ROLE_LABELS, type GameEvent } from '@lrs/shared';
+import { ROLE_LABELS, type DeathCause, type GameEvent } from '@lrs/shared';
 import {
   DEATH_CAUSE_LABELS,
   isNightPhase,
@@ -7,6 +7,16 @@ import {
   SPEECH_CONTEXT_LABELS,
   seatLabel,
 } from './labels';
+
+/**
+ * 死讯文案。
+ *
+ * 没有死因时只写「N 号出局」—— 夜里被刀、被毒本来就只公布「谁出局了」；
+ * 只有投票放逐、猎人带走这种当场就公开的原因才会带上括号。
+ */
+function diedText(seat: number, cause: DeathCause | null): string {
+  return cause === null ? `${seatLabel(seat)}出局` : `${seatLabel(seat)}出局（${DEATH_CAUSE_LABELS[cause]}）`;
+}
 
 export type Tone = 'muted' | 'normal' | 'highlight' | 'danger' | 'success' | 'private';
 
@@ -67,7 +77,7 @@ export function buildAckCard(events: readonly GameEvent[]): AckCard {
 
       case 'died': {
         spec = { kind: 'death', title: '天亮了 · 死讯', tone: 'neutral' };
-        line = `${seatLabel(payload.seat)}出局（${DEATH_CAUSE_LABELS[payload.cause]}）`;
+        line = diedText(payload.seat, payload.cause);
         break;
       }
 
@@ -217,7 +227,7 @@ export function formatEvent(event: GameEvent): EventLine {
       return {
         ...base,
         tone: 'danger',
-        text: `${seatLabel(event.payload.seat)}出局（${DEATH_CAUSE_LABELS[event.payload.cause]}）`,
+        text: diedText(event.payload.seat, event.payload.cause),
       };
 
     case 'hunter_shot':

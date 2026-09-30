@@ -1,6 +1,7 @@
 import {
   isGodRole,
   isNightPhase,
+  isPublicDeathCause,
   roleCamp,
   type Action,
   type Camp,
@@ -549,7 +550,11 @@ function phaseDawnAnnounce(state: GameState, events: GameEvent[]): void {
   const unannounced = state.players.filter((p) => p.death !== null && !p.deathAnnounced);
   for (const player of unannounced) {
     player.deathAnnounced = true;
-    emit(state, events, { t: 'died', seat: player.seat, cause: player.death!.cause });
+    // 死因只在「当场就公开」时才写进事件：投票放逐、猎人带走。
+    // 夜里被刀、被毒 —— 天亮只公布「谁出局了」，不公布为什么。
+    // 真实原因仍然留在 player.death 里（上帝视角与复盘要用）。
+    const cause = player.death!.cause;
+    emit(state, events, { t: 'died', seat: player.seat, cause: isPublicDeathCause(cause) ? cause : null });
     if (player.isChief && state.chief.badgeAlive) state.pendingChiefTransfer = player.seat;
   }
 

@@ -31,7 +31,7 @@ export interface PublicFacts {
   day: number;
   seatCount: number;
   aliveSeats: SeatId[];
-  deaths: { seat: SeatId; cause: DeathCause; day: number }[];
+  deaths: { seat: SeatId; cause: DeathCause | null; day: number }[];
   chief: {
     elected: SeatId | null;
     badgeAlive: boolean;
@@ -123,8 +123,11 @@ export function applyEvent(facts: PublicFacts, event: GameEvent): void {
     case 'died': {
       facts.deaths.push({ seat: payload.seat, cause: payload.cause, day: event.day });
       facts.aliveSeats = facts.aliveSeats.filter((seat) => seat !== payload.seat);
+      // 死因可能为空：夜里被刀、被毒不公开原因，只能记下「谁出局了」
       facts.timeline.push(
-        `第 ${event.day} 天：${seatText(payload.seat)}出局（${DEATH_CAUSE_LABELS[payload.cause]}）`,
+        payload.cause === null
+          ? `第 ${event.day} 天：${seatText(payload.seat)}出局`
+          : `第 ${event.day} 天：${seatText(payload.seat)}出局（${DEATH_CAUSE_LABELS[payload.cause]}）`,
       );
       break;
     }

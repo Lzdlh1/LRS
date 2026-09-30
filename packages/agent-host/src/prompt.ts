@@ -97,8 +97,9 @@ ${teammates}
 function buildSituationBlock(input: PromptInput): string {
   const { facts } = input;
 
+  // 死因可能为空（夜里被刀、被毒不公开原因），那就只说「出局」
   const deaths = facts.deaths.map(
-    (item) => `${item.seat} 号（第 ${item.day} 天${DEATH_TEXT[item.cause] ?? '出局'}）`,
+    (item) => `${item.seat} 号（第 ${item.day} 天${(item.cause && DEATH_TEXT[item.cause]) || '出局'}）`,
   );
   const chief = facts.chief.badgeAlive
     ? facts.chief.elected !== null

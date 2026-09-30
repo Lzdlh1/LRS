@@ -1,12 +1,13 @@
-import type {
-  Action,
-  ActionOption,
-  Camp,
-  DeathCause,
-  GameEvent,
-  Phase,
-  Role,
-  SeatId,
+import {
+  isPublicDeathCause,
+  type Action,
+  type ActionOption,
+  type Camp,
+  type DeathCause,
+  type GameEvent,
+  type Phase,
+  type Role,
+  type SeatId,
 } from '@lrs/shared';
 import type { GameState, Viewer } from '@lrs/core-engine';
 
@@ -220,7 +221,12 @@ export function projectState({
       isHuman: player.isHuman,
       alive: revealed ? player.death === null : true,
       deathAnnounced: player.deathAnnounced,
-      deathCause: revealed ? (player.death?.cause ?? null) : null,
+      // 死因只有「当场就公开」的才给普通玩家看（投票放逐 / 猎人带走）。
+      // 夜里被刀、被毒：天亮只说「谁出局了」，为什么死只有上帝视角与复盘看得到。
+      deathCause:
+        revealed && (isGod || isPublicDeathCause(player.death?.cause))
+          ? (player.death?.cause ?? null)
+          : null,
       isChief: player.isChief,
       role: isGod || player.seat === viewerSeat ? player.role : null,
     };

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ROLE_LABELS } from '@lrs/shared';
 import type { ClientState } from '@lrs/server/protocol';
-import { ROLE_GLYPHS } from '../labels';
+import { faceCrop, faceUrl } from '../faces';
 import type { SeatMark } from '../marks';
 
 type ClientSeat = ClientState['seats'][number];
@@ -56,16 +56,23 @@ function ownRoleText(item: ClientSeat): string {
       @click="emit('pick', item.seat)"
     >
       <span class="head">
-        <span class="avatar">
+        <!--
+          身份可见时（本人 / 上帝视角 / 终局）头像让给立绘。
+          角色拿不到时一律退回号码 —— 所以这里不可能泄漏：
+          item.role 本来就是服务端按可见性裁剪过的，null 就是真的看不到。
+        -->
+        <span class="avatar" :class="{ faced: Boolean(item.role) }" :title="item.role ? `身份：${ROLE_LABELS[item.role]}` : ''">
+          <i
+            v-if="item.role"
+            class="face"
+            :style="{ backgroundImage: faceUrl(item.role), backgroundPosition: faceCrop(item.role) }"
+          />
           <span class="num">{{ item.seat }}</span>
         </span>
         <!-- 出局：盖一枚朱砂「出局」章。原来那个 ✕ 在小头像上几乎看不见 -->
         <span v-if="!item.alive" class="out-stamp">出局</span>
         <!-- 自己那个座位一眼要认得出来：不写「我」，就得回头翻日志数座位 -->
         <span v-if="item.seat === humanSeat" class="me-tag">我</span>
-        <span v-else-if="item.role" class="glyph" :title="`身份：${ROLE_GLYPHS[item.role]}`">
-          {{ ROLE_GLYPHS[item.role] }}
-        </span>
         <span v-if="item.isChief" class="chief-mark" title="警长">🎖</span>
         <!-- 身份标记压在头像上：给得大一点，手机上才看得清 -->
         <span
@@ -184,22 +191,28 @@ function ownRoleText(item: ClientSeat): string {
   text-overflow: ellipsis;
 }
 
-/* 身份角标：上帝视角或本人看得到。米纸小印，单字 */
-.glyph {
+/*
+ * 已知身份时头像换成角色立绘。
+ * 取景规则（放大与对位）在 ../faces.ts：立绘是全身方图，不放大就只能看出一团颜色；
+ * 座位号压在胸口上，靠描边保证在浅色立绘上也能读。
+ */
+.avatar.faced {
+  overflow: hidden;
+}
+
+.avatar .face {
   position: absolute;
-  left: -3px;
-  top: -3px;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 3px;
-  border-radius: 2px;
-  background: #efe6d2;
-  border: 2px solid #16263f;
-  color: #16263f;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 12px;
-  text-align: center;
+  inset: 0;
+  background-repeat: no-repeat;
+  background-size: 340% auto;
+  pointer-events: none;
+}
+
+.avatar.faced .num {
+  position: relative;
+  text-shadow:
+    0 1px 4px rgba(0, 0, 0, 0.95),
+    0 0 3px rgba(0, 0, 0, 0.85);
 }
 
 /* 自己的座位：实心青玉「我」牌，比边框加粗更认得出 */

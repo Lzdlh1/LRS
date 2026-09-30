@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>立绘生成 · 六个角色</title>
+<style>
+  body { margin:0; padding:18px 18px 40px; background:#14120f; color:#e8e0cf;
+         font:13px/1.7 "Segoe UI", "Microsoft YaHei", sans-serif; }
+  h1 { font-size:17px; margin:0 0 6px; }
+  p.hint { color:#9a917f; margin:0 0 14px; max-width:1000px; }
+  p.hint b { color:#e0b47a; }
+  .bar { margin:0 0 16px; display:flex; gap:10px; align-items:center; }
+  button { font-size:12px; padding:4px 12px; cursor:pointer;
+           background:#1e1c18; color:#e8e0cf; border:1px solid #4a453b; border-radius:3px; }
+  button:hover { background:#2a271f; }
+  .row { display:flex; flex-wrap:wrap; gap:14px; }
+  figure { margin:0; }
+  .box { width:200px; height:300px; border:1px solid #2c2a24; border-radius:4px;
+         background:#0c0c0a; overflow:hidden; }
+  .box img { width:100%; height:100%; object-fit:cover; display:block; }
+  figcaption { color:#9a917f; margin-top:6px; font-size:12px; font-weight:600; color:#c9c0ab; }
+  .tip { color:#6f6a5e; font-size:11px; }
+</style>
+</head>
+<body>
+<h1>立绘生成 · 六个角色</h1>
+<p class="hint">
+  这个页面<b>每打开一次就在 IDE 这边排队生成一批图</b>。图没出来时会显示一张灰底占位图（写着 "The image is generating…"），
+  那说明还在生成 —— <b>点下面「全部重取」或者过一会儿刷新页面</b>，出真图就行了。
+  六张都变成真图之后告诉我，我把它们抓成静态文件放进 App。
+</p>
+<div class="bar">
+  <button id="all">全部重取</button>
+  <span class="tip">如果某一张反复都是灰底，单独点它下面的「重取」</span>
+</div>
+<div class="row" id="row"></div>
+
+<script>
+const BASE = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image';
+const SIZE = 'portrait_16_9';
+const STYLE = 'comic book illustration, clean ink line art, cel shading, dramatic side lighting, full body, plain flat two tone background';
+
+/* 这六条必须与 tools/art/harvest.mjs 里的逐字一致：接口按 URL 缓存，差一个字符就是另一次生成 */
+const ITEMS = [
+  ['狼人 werewolf', 'full body anthropomorphic werewolf character, muscular wolf man with grey fur and glowing yellow eyes, torn dark clothes, digitigrade legs with claws, ' + STYLE],
+  ['预言家 seer', 'full body illustration of a young seer woman in a hooded robe holding a glowing crystal ball, mysterious, ' + STYLE],
+  ['女巫 witch', 'full body illustration of a witch woman with potion bottles and a wooden staff, dark green cloak, ' + STYLE],
+  ['猎人 hunter', 'full body illustration of a hunter man in a long leather coat with a shotgun over his shoulder, ' + STYLE],
+  ['守卫 guard', 'full body illustration of an armored knight guard holding a tower shield, ' + STYLE],
+  ['村民 villager', 'full body illustration of an ordinary young villager holding a lantern, simple clothes, ' + STYLE],
+];
+
+const row = document.getElementById('row');
+for (const [label, prompt] of ITEMS) {
+  const url = BASE + '?prompt=' + encodeURIComponent(prompt) + '&image_size=' + SIZE;
+  const fig = document.createElement('figure');
+  const box = document.createElement('div');
+  box.className = 'box';
+  const img = document.createElement('img');
+  img.alt = label;
+  box.appendChild(img);
+  const cap = document.createElement('figcaption');
+  cap.textContent = label;
+  const btn = document.createElement('button');
+  btn.textContent = '重取';
+  // 占位图上写的就是「refresh page to preview」，所以重取一律走整页刷新；
+  // 千万不要给 URL 加随机参数 —— 那是另一个 URL，等于又开一个新任务，永远等不到。
+  btn.onclick = () => location.reload();
+  fig.append(box, cap, btn);
+  row.appendChild(fig);
+}
+
+document.getElementById('all').onclick = () => location.reload();
+</script>
+</body>
+</html>

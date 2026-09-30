@@ -6,12 +6,14 @@ import ActionPanel from './components/ActionPanel.vue';
 import EventLog from './components/EventLog.vue';
 import InfoCard from './components/InfoCard.vue';
 import ReplayPanel from './components/ReplayPanel.vue';
+import RoleCard from './components/RoleCard.vue';
 import SeatColumn from './components/SeatColumn.vue';
 import SettingsPanel from './components/SettingsPanel.vue';
 import StageOverlay from './components/StageOverlay.vue';
 import UsagePanel from './components/UsagePanel.vue';
 import VoteMap from './components/VoteMap.vue';
 import { formatEvent, buildAckCard, type EventLine } from './format';
+import { faceCrop, faceUrl } from './faces';
 import {
   isNightPhase,
   nightStepIndex,
@@ -19,7 +21,6 @@ import {
   NIGHT_STEP_NAMES,
   NIGHT_STEPS,
   PHASE_LABELS,
-  ROLE_GLYPHS,
 } from './labels';
 import { deriveMarks } from './marks';
 import { useGameSocket } from './ws';
@@ -76,6 +77,26 @@ const leftSeats = computed(() => seats.value.slice(0, half.value));
 const rightSeats = computed(() => seats.value.slice(half.value));
 
 const myRole = computed(() => seats.value.find((seat) => seat.seat === humanSeat.value)?.role ?? null);
+
+/**
+ * 开局看牌。
+ *
+ * 只做一件客户端自己的事：本局第一次拿到自己的角色时，把立绘摆出来给人看一眼。
+ * 每局只弹一次（记 gameId），点了「知道了」就不再打扰 —— 不加服务端闸门，
+ * 因为这里没有任何东西需要等服务端确认，硬塞进 ack 机制反而会把对局卡住。
+ */
+const roleCardOpen = ref(false);
+const roleCardSeenGame = ref('');
+
+watch([myRole, () => state.value?.gameId], ([role, gameId]) => {
+  if (!role || !gameId || roleCardSeenGame.value === gameId) return;
+  roleCardOpen.value = true;
+});
+
+function closeRoleCard(): void {
+  roleCardSeenGame.value = state.value?.gameId ?? '';
+  roleCardOpen.value = false;
+}
 
 /** 流程提示：夜里写明是第几步、谁在行动（四步永远都走，写出来不泄漏谁还活着） */
 const phaseLabel = computed(() => {
@@ -358,9 +379,11 @@ function abort(): void {
       <span v-if="stepSecondsLeft > 0" class="chip step" title="这一步的固定倒计时：到点就换下一步，与有没有人行动无关">
         ⏳ {{ stepSecondsLeft }}s
       </span>
-      <!-- 底牌：自己的身份做成一张米纸小卡，左边一枚朱砂/青玉印（木刻那套） -->
-      <span v-if="myRole && !godView" class="chip mine" :class="myRole === 'werewolf' ? 'wolf' : 'good'">
-        <i class="seal">{{ ROLE_GLYPHS[myRole] }}</i>
+      <!-- 底牌：自己的身份做成一张米纸小卡，左边是自己的立绘（只有自己看得到，不会泄漏） -->
+      <span v-if="myRole && !godView" class="chip mine">
+        <span class="mine-face">
+          <i :style="{ backgroundImage: faceUrl(myRole), backgroundPosition: faceCrop(myRole) }" />
+        </span>
         {{ humanSeat }} 号 · {{ ROLE_LABELS[myRole] }}
       </span>
 
@@ -476,6 +499,9 @@ function abort(): void {
 
     <!-- 重大信息卡片：服务端停着等这一下，点了才会继续推进 -->
     <InfoCard v-if="ackCard" :card="ackCard" @confirm="resume()" />
+
+    <!-- 开局看牌：自己的立绘。纯客户端，每局一次，不拦对局 -->
+    <RoleCard v-if="roleCardOpen && myRole" :seat="humanSeat" :role="myRole" @confirm="closeRoleCard" />
 
     <ReplayPanel v-if="replay" :payload="replay" @day="openReplay" @close="closeReplay" />
     <UsagePanel v-if="usage" :payload="usage" @scope="openUsage" @close="closeUsage" />
@@ -638,7 +664,7 @@ function abort(): void {
   color: #b3c0ff;
 }
 
-/* 底牌：米纸小卡 + 一枚角色印。印用单字（狼/预/女/猎/守/民），比缩到 20px 的徽记清楚得多 */
+/* 底牌：米纸小卡 + 自己的立绘。立绘是全身方图，放大到 210% 贴顶，只露头肩 */
 .chip.mine {
   display: inline-flex;
   align-items: center;
@@ -652,22 +678,21 @@ function abort(): void {
   font-weight: 700;
 }
 
-.chip.mine .seal {
-  width: 17px;
-  height: 17px;
-  display: grid;
-  place-items: center;
-  border-radius: 2px;
-  background: #2f6a58;
-  color: #efe6d2;
-  font-size: 11px;
-  font-style: normal;
-  font-weight: 700;
-  line-height: 1;
+.chip.mine .mine-face {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 50%;
+  overflow: hidden;
+  background: #16263f;
 }
 
-.chip.mine.wolf .seal {
-  background: #b8342a;
+.chip.mine .mine-face i {
+  position: absolute;
+  inset: 0;
+  background-repeat: no-repeat;
+  background-size: 340% auto;
 }
 
 /* 夜间那一步的固定倒计时 */

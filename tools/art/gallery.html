@@ -8,6 +8,7 @@
   body { margin:0 auto; max-width:1200px; padding:24px 16px 64px; color:#e8e0cf;
          font:14px/1.7 "Segoe UI", "Microsoft YaHei", sans-serif; }
   h1 { font-size:19px; font-weight:600; margin:0 0 4px; }
+  a { color:#c9552f; }
   .hint { color:#9a917f; margin:0 0 28px; }
   h2 { font-size:16px; font-weight:600; margin:36px 0 10px; padding-top:18px; border-top:1px solid #2c2a24; }
   h2 span { color:#c9552f; }
@@ -18,11 +19,66 @@
   .w3 { flex:1 1 300px; max-width:32%; }
   .w1 { flex:1 1 100%; max-width:100%; }
   figcaption { color:#9a917f; margin-top:8px; font-size:13px; }
+
+  /* 正式稿矢量图：垫上 App 里那套天空渐变，看落位 */
+  .sky { position:relative; aspect-ratio:16/10; border-radius:4px; overflow:hidden; }
+  .sky img { position:absolute; left:0; right:0; bottom:0; width:100%; display:block; }
+  .sky.night { background:
+    radial-gradient(circle at 20% 10%, #efe6d2 0 4.4vmin, rgba(239,230,210,0) 4.4vmin),
+    radial-gradient(circle at 20% 10%, rgba(222,232,255,.2) 0%, rgba(147,164,255,.07) 18%, transparent 40%),
+    linear-gradient(180deg,#0a0f1a 0%,#05070c 100%); }
+  .sky.day { background:
+    radial-gradient(circle at 76% 8%, #ffe9bd 0 4.4vmin, rgba(255,233,189,0) 4.4vmin),
+    radial-gradient(circle at 76% 8%, rgba(255,216,156,.28) 0%, rgba(255,196,120,.11) 20%, transparent 44%),
+    linear-gradient(180deg,#2b3a55 0%,#1a2434 54%,#0f1622 100%); }
 </style>
 </head>
 <body>
 <h1>美术试色 · 看图</h1>
 <p class="hint">全部是 p5 + p5.brush 无头渲染出的静帧，非成图，只用来判断方向。</p>
+
+<h2>AI 立绘 · 六角色 <span>portraits/*.png</span></h2>
+<p class="hint">
+  用 IDE 的 text_to_image 接口生成的（描线 + 平涂分色）。流程记在 <code>tools/art/harvest.mjs</code>：
+  接口按 URL 缓存，先请求只会拿到"生成中"占位图，得让 IDE 预览把图刷出来，再用同一个 URL 抓真图。
+  完整联络表（含 44px 头像取景与 22px 底牌）见 <a href="portrait-sheet.html">portrait-sheet.html</a>。
+</p>
+<div class="row" id="faces"></div>
+<script>
+{
+  const ROLES = [['werewolf','狼人'],['seer','预言家'],['witch','女巫'],['hunter','猎人'],['guard','守卫'],['villager','村民']];
+  const box = document.getElementById('faces');
+  for (const [file, label] of ROLES) {
+    const f = document.createElement('figure');
+    f.className = 'w3';
+    f.style.flex = '1 1 150px';
+    f.innerHTML = `<img src="/packages/web/public/art/portraits/${file}.png" alt="${label}">`
+      + `<figcaption>${label}</figcaption>`;
+    box.appendChild(f);
+  }
+}
+</script>
+
+<h2>昼夜背景 · 正式稿 <span>scene-night.svg / scene-day.svg</span></h2>
+<p class="hint">已接进 App 的矢量稿（贴底按宽度铺，窄屏改按高度铺）。下面垫的是 App 里同一套天空渐变，看落位用。</p>
+<div class="row">
+  <figure class="w2">
+    <div class="sky night"><img src="/packages/web/public/art/scene-night.svg" alt="夜"></div>
+    <figcaption>夜：反白的狼 + 朱红基线 + 山脊雾 / 谷地雾</figcaption>
+  </figure>
+  <figure class="w2">
+    <div class="sky day"><img src="/packages/web/public/art/scene-day.svg" alt="昼"></div>
+    <figcaption>昼：压暗的狼 + 暖色基线 + 三只鸟 + 暖雾</figcaption>
+  </figure>
+</div>
+
+<h2>昼夜对比 · 桌面与手机 <span>scene-preview.html</span></h2>
+<div class="row">
+  <figure class="w1">
+    <img src="out/scene-preview.png" alt="昼夜场景条预览">
+    <figcaption>同一套渐变 + 地形条，在 1200×520 与 360×700 下的落位（另有 <a href="scene-preview.html">可交互活页</a>）</figcaption>
+  </figure>
+</div>
 
 <h2>风格三选 <span>style.png</span></h2>
 <div class="row">

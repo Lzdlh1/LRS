@@ -4,6 +4,7 @@ import { ROLE_LABELS, type Action, type Phase } from '@lrs/shared';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import ActionPanel from './components/ActionPanel.vue';
 import EventLog from './components/EventLog.vue';
+import GameOverOverlay from './components/GameOverOverlay.vue';
 import InfoCard from './components/InfoCard.vue';
 import ReplayPanel from './components/ReplayPanel.vue';
 import RoleCard from './components/RoleCard.vue';
@@ -82,17 +83,30 @@ const myRole = computed(() => seats.value.find((seat) => seat.seat === humanSeat
  * 只做一件客户端自己的事：本局第一次拿到自己的角色时，把立绘摆出来给人看一眼。
  * 每局只弹一次（记 gameId），点了「知道了」就不再打扰 —— 不加服务端闸门，
  * 因为这里没有任何东西需要等服务端确认，硬塞进 ack 机制反而会把对局卡住。
+ * 已确认的局号写进 sessionStorage：刷新页面后不会再被同一张牌糊一脸。
  */
 const roleCardOpen = ref(false);
-const roleCardSeenGame = ref('');
+const ROLE_CARD_KEY = 'lrs:role-card-seen';
+
+function roleCardSeen(gameId: string): boolean {
+  try {
+    return sessionStorage.getItem(ROLE_CARD_KEY) === gameId;
+  } catch {
+    return false;
+  }
+}
 
 watch([myRole, () => state.value?.gameId], ([role, gameId]) => {
-  if (!role || !gameId || roleCardSeenGame.value === gameId) return;
+  if (!role || !gameId || roleCardSeen(gameId)) return;
   roleCardOpen.value = true;
 });
 
 function closeRoleCard(): void {
-  roleCardSeenGame.value = state.value?.gameId ?? '';
+  try {
+    sessionStorage.setItem(ROLE_CARD_KEY, state.value?.gameId ?? '');
+  } catch {
+    // 隐私模式下存不进就算了 —— 代价只是下次刷新再看一眼牌
+  }
   roleCardOpen.value = false;
 }
 
@@ -131,6 +145,38 @@ const stepSecondsLeft = computed(() => {
   return Math.max(0, Math.ceil((stepLeftBase.value - elapsed) / 1000));
 });
 
+/**
+ * 真人这一手的倒计时。
+ *
+ * 与夜间节拍同一个套路：服务端给的 deadlineMs 是相对时长，本地锚定收到那一刻，
+ * 之后靠 500ms 心跳自己往下走 —— 不等服务端每秒推一次，省消息也避免跳变。
+ * 新待办的 identity 用 deadlineAt：每次派发都不同，拿它当「换了一手」的信号。
+ */
+const actionLeftBase = ref(0);
+const actionTotalMs = ref(0);
+let actionAnchor = 0;
+
+watch(
+  () => state.value?.pending?.deadlineAt ?? 0,
+  (deadlineAt) => {
+    const pending = state.value?.pending;
+    if (!pending || deadlineAt === 0 || pending.seat !== humanSeat.value) {
+      actionLeftBase.value = 0;
+      actionTotalMs.value = 0;
+      return;
+    }
+    actionLeftBase.value = pending.deadlineMs;
+    actionTotalMs.value = pending.deadlineMs;
+    actionAnchor = Date.now();
+  },
+);
+
+const actionLeftMs = computed(() => {
+  if (actionLeftBase.value <= 0) return null;
+  const elapsed = tickNow.value - actionAnchor;
+  return Math.max(0, actionLeftBase.value - elapsed);
+});
+
 const pendingSeat = computed(() => state.value?.pending?.seat ?? null);
 const speakingSeat = computed(() => streaming.value?.seat ?? null);
 
@@ -151,6 +197,68 @@ const spokeSeconds = computed(() => {
 /** 投票阶段才画票型图，别的时候不占地方 */
 const VOTE_PHASES: Phase[] = ['CHIEF_VOTE', 'CHIEF_PK_VOTE', 'DAY_VOTE', 'DAY_PK_VOTE'];
 
+/** 有人说话的阶段：气泡只在这些阶段里挂着，进夜/投票就摘掉 */
+const SPEECH_PHASES: ReadonlySet<Phase> = new Set([
+  'CHIEF_SPEECH',
+  'CHIEF_PK_SPEECH',
+  'DAY_SPEECH',
+  'DAY_PK_SPEECH',
+  'LAST_WORDS',
+]);
+
+/**
+ * 座位旁的发言气泡。
+ *
+ * 打字机还在吐字时跟着 streaming 走；落地成 spoke 事件后留在原座位上，
+ * 直到下一个发言者接管或离开发言阶段 —— 让人不用盯着中间日志也知道谁在说话。
+ */
+const lastSpoke = ref<{ seat: number; text: string } | null>(null);
+/** 已处理到哪条 spoke 的 seq：事件数组每来一条新消息都会整体重建，拿游标跳过旧事件 */
+let lastSpokeSeq = 0;
+
+watch(
+  () => events.value,
+  (list) => {
+    for (const event of list) {
+      if (event.payload.t !== 'spoke' || event.seq <= lastSpokeSeq) continue;
+      lastSpokeSeq = event.seq;
+      lastSpoke.value = { seat: event.payload.seat, text: event.payload.text };
+    }
+  },
+);
+
+// 换局/重连后游标归零，免得把上一局的发言带到这一局的气泡里
+watch(
+  () => state.value?.gameId,
+  () => {
+    lastSpokeSeq = 0;
+    lastSpoke.value = null;
+  },
+);
+
+// 离开发言阶段就摘气泡：夜里飘着一个白天的气泡很出戏
+watch(
+  () => state.value?.phase,
+  (phase) => {
+    if (!phase || !SPEECH_PHASES.has(phase)) lastSpoke.value = null;
+  },
+);
+
+const bubble = computed(() => {
+  const current = state.value;
+  if (!current || !SPEECH_PHASES.has(current.phase)) return null;
+  const live = streaming.value;
+  if (live) {
+    return {
+      seat: live.seat,
+      text: live.text.replace(/\s*\n+\s*/g, ' '),
+      live: !live.done,
+    };
+  }
+  if (lastSpoke.value) return { ...lastSpoke.value, live: false };
+  return null;
+});
+
 /**
  * 本轮票型。`voted` 事件是公开的（谁投给谁本来就会念出来），
  * 这里只按「当天」筛出来，不做任何推断。
@@ -168,6 +276,33 @@ const votePairs = computed(() => {
 const showVoteMap = computed(
   () => Boolean(state.value) && VOTE_PHASES.includes(state.value!.phase) && votePairs.value.length > 0,
 );
+
+/** 终局数据：game_over 事件一出来就弹出结算卡 */
+const gameOverPayload = computed(() => {
+  if (!state.value || state.value.winner === null) return null;
+  // 从已收事件里抓最后一条 game_over（只可能有一条）
+  for (let i = events.value.length - 1; i >= 0; i -= 1) {
+    const ev = events.value[i]!;
+    if (ev.payload.t === 'game_over') {
+      return {
+        winner: ev.payload.winner,
+        reveal: ev.payload.reveal,
+        seats: state.value.seats.map((s) => ({
+          seat: s.seat,
+          name: s.name,
+          alive: s.alive,
+          isChief: s.isChief,
+        })),
+        humanSeat: state.value.humanSeat,
+        days: state.value.day,
+      };
+    }
+  }
+  return null;
+});
+/** 手动关掉结算卡后不再自动弹（点了「看看现场」时有用） */
+const gameOverDismissed = ref(false);
+watch(() => state.value?.gameId, () => { gameOverDismissed.value = false; });
 
 /** 狼队友是不是已经「碰过面」：狼人睁眼那一刻就算认识了，之前（准备 / 守卫）还不知道 */
 const teammatesKnown = computed(() => {
@@ -391,6 +526,16 @@ function abort(): void {
       <span class="spacer" />
       <span class="conn" :class="{ ok: connected }">{{ connected ? '已连接' : '未连接' }}</span>
 
+      <!-- 终局结算卡关掉之后想再看一眼的入口 -->
+      <button
+        v-if="gameOverPayload && gameOverDismissed"
+        class="ghost tiny"
+        title="再看一眼终局结算"
+        @click="gameOverDismissed = false"
+      >
+        结果
+      </button>
+
       <!-- 暂停时把「继续」单独提到最外层：这是唯一需要立刻够到的按钮 -->
       <button v-if="state?.paused" class="primary" @click="resume()">▶ 继续</button>
     </header>
@@ -444,6 +589,7 @@ function abort(): void {
 
     <main class="board">
       <SeatColumn
+        side="left"
         :seats="leftSeats"
         :marks="marks"
         :targets="targetLabels"
@@ -451,6 +597,7 @@ function abort(): void {
         :speaking-seat="speakingSeat"
         :spoke-seconds="spokeSeconds"
         :human-seat="humanSeat"
+        :bubble="bubble"
         @pick="pickSeat"
       />
 
@@ -461,11 +608,14 @@ function abort(): void {
           :state="state"
           :connected="connected"
           :error="lastError"
+          :action-left-ms="actionLeftMs"
+          :action-total-ms="actionTotalMs"
           @send="submit"
         />
       </div>
 
       <SeatColumn
+        side="right"
         :seats="rightSeats"
         :marks="marks"
         :targets="targetLabels"
@@ -473,6 +623,7 @@ function abort(): void {
         :speaking-seat="speakingSeat"
         :spoke-seconds="spokeSeconds"
         :human-seat="humanSeat"
+        :bubble="bubble"
         @pick="pickSeat"
       />
     </main>
@@ -500,6 +651,19 @@ function abort(): void {
 
     <!-- 开局看牌：自己的立绘。纯客户端，每局一次，不拦对局 -->
     <RoleCard v-if="roleCardOpen && myRole" :seat="humanSeat" :role="myRole" @confirm="closeRoleCard" />
+
+    <!-- 终局结算：胜负横幅 + 亮底牌，点掉后才回到现场 -->
+    <GameOverOverlay
+      v-if="gameOverPayload && !gameOverDismissed"
+      :winner="gameOverPayload.winner"
+      :reveal="gameOverPayload.reveal"
+      :seats="gameOverPayload.seats"
+      :human-seat="gameOverPayload.humanSeat"
+      :days="gameOverPayload.days"
+      @dismiss="gameOverDismissed = true"
+      @replay="openReplay()"
+      @new-game="newGame"
+    />
 
     <ReplayPanel v-if="replay" :payload="replay" @day="openReplay" @close="closeReplay" />
     <UsagePanel v-if="usage" :payload="usage" @scope="openUsage" @close="closeUsage" />

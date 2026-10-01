@@ -65,19 +65,24 @@ const targeted = computed(
       v-for="(arrow, index) in arrows"
       :key="`a${index}`"
       :d="arrow.d"
+      class="arrow-draw"
       fill="none"
       stroke="#b8342a"
       stroke-width="1.8"
       stroke-linecap="round"
+      pathLength="1"
+      :style="{ animationDelay: `${index * 70}ms` }"
     />
     <polygon
       v-for="(arrow, index) in arrows"
       :key="`h${index}`"
       :points="`${arrow.headX - 3.6},${BASE - 7} ${arrow.headX + 3.6},${BASE - 7} ${arrow.headX},${BASE - 1}`"
+      class="arrow-head"
       fill="#b8342a"
+      :style="{ animationDelay: `${index * 70 + 120}ms` }"
     />
 
-    <g v-for="(x, index) in abstains" :key="`s${index}`">
+    <g v-for="(x, index) in abstains" :key="`s${index}`" class="abstain" :style="{ animationDelay: `${index * 60}ms` }">
       <path :d="`M ${x} ${BASE} v -13`" stroke="#6b7a99" stroke-width="1.6" fill="none" />
       <text :x="x" :y="BASE - 16" text-anchor="middle" font-size="8" fill="#6b7a99">弃</text>
     </g>
@@ -115,5 +120,39 @@ const targeted = computed(
   margin: 0 auto;
   padding: 2px 0 4px;
   border-bottom: 1px solid var(--line);
+}
+
+/* 票一条条画出来：路径描边走一遍（pathLength=1 归一化，与弧线长短无关），箭头在描线到位后再冒出来 */
+.arrow-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: draw 0.5s ease forwards;
+}
+
+@keyframes draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.arrow-head {
+  opacity: 0;
+  animation: head-in 0.2s ease forwards;
+}
+
+@keyframes head-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.abstain {
+  opacity: 0;
+  animation: head-in 0.25s ease forwards;
 }
 </style>

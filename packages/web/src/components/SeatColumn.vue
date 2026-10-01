@@ -17,6 +17,10 @@ const props = defineProps<{
   /** 座位 → 最近一次发言用时（秒），来自 spoke.ms */
   spokeSeconds: Record<number, number>;
   humanSeat: number;
+  /** 本列在圆桌的哪一侧：决定发言气泡往哪边长（朝桌子中间） */
+  side: 'left' | 'right';
+  /** 当前要冒泡的发言；同一时刻最多一个座位在说话 */
+  bubble: { seat: number; text: string; live: boolean } | null;
 }>();
 
 const emit = defineEmits<{ pick: [seat: number] }>();
@@ -92,6 +96,14 @@ function ownRoleText(item: ClientSeat): string {
       <span v-else-if="spokeSeconds[item.seat]" class="took" title="最近一次发言用时">
         用时 {{ spokeSeconds[item.seat] }}s
       </span>
+      <!-- 发言气泡：朝桌子中间长出去，让玩家在头像旁就看到谁在说话 -->
+      <div
+        v-if="bubble?.seat === item.seat"
+        class="bubble"
+        :class="[side, { live: bubble.live }]"
+      >
+        {{ bubble.text }}
+      </div>
     </button>
   </aside>
 </template>
@@ -166,7 +178,8 @@ function ownRoleText(item: ClientSeat): string {
   transition:
     border-color 0.18s ease,
     box-shadow 0.18s ease,
-    background 0.18s ease;
+    background 0.18s ease,
+    filter 0.5s ease;
 }
 
 .num {
@@ -308,6 +321,7 @@ function ownRoleText(item: ClientSeat): string {
   filter: grayscale(0.6) brightness(0.7);
 }
 
+/* 出局章盖下来那一下：从略大一点砸到尺寸，带一点墨章的顿挫 */
 .avatar .out-chip {
   position: absolute;
   left: 50%;
@@ -324,6 +338,98 @@ function ownRoleText(item: ClientSeat): string {
   letter-spacing: 0.04em;
   white-space: nowrap;
   pointer-events: none;
+  animation: stamp-in 0.34s cubic-bezier(0.2, 1.2, 0.4, 1);
+}
+
+@keyframes stamp-in {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) scale(1.7) rotate(-4deg);
+  }
+  60% {
+    opacity: 1;
+    transform: translateX(-50%) scale(0.94) rotate(0.5deg);
+  }
+  100% {
+    transform: translateX(-50%) scale(1) rotate(0deg);
+  }
+}
+
+/* ── 发言气泡 ── */
+
+/*
+ * 米纸底墨蓝边的对白气泡，朝桌子中间探出去。
+ * 左列往右长、右列往左长；盖在中间面板上方，正文完整内容仍在日志里。
+ */
+.bubble {
+  position: absolute;
+  top: 2px;
+  z-index: 8;
+  width: max-content;
+  max-width: 190px;
+  max-height: 88px;
+  padding: 7px 10px;
+  border-radius: 3px;
+  background: #efe6d2;
+  border: 2px solid #16263f;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  color: #1b2a3f;
+  font-size: 11.5px;
+  line-height: 1.55;
+  text-align: left;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  animation: bubble-in 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+@keyframes bubble-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px) scale(0.92);
+  }
+}
+
+/* 小尾巴：指向说话的那个头像 */
+.bubble::after {
+  content: '';
+  position: absolute;
+  top: 14px;
+  width: 8px;
+  height: 8px;
+  background: #efe6d2;
+  border: 2px solid #16263f;
+}
+
+.bubble.left {
+  left: calc(100% + 8px);
+}
+
+.bubble.left::after {
+  left: -6px;
+  border-top: none;
+  border-right: none;
+  transform: rotate(45deg);
+}
+
+.bubble.right {
+  right: calc(100% + 8px);
+}
+
+.bubble.right::after {
+  right: -6px;
+  border-bottom: none;
+  border-left: none;
+  transform: rotate(45deg);
+}
+
+/* 打字机进行中：呼吸一点月光色，跟日志里的光标同个信号 */
+.bubble.live {
+  border-color: var(--accent-dim);
+}
+
+.bubble.live::after {
+  border-color: var(--accent-dim);
 }
 
 /* ── 状态 ── */

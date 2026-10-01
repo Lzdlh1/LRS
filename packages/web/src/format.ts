@@ -27,6 +27,8 @@ export interface EventLine {
   text: string;
   /** 发言行要单独排版（说话人是日志里最要紧的信息） */
   speech?: boolean;
+  /** 阶段切换行：跨天时由日志组件升级成「天」级别的分隔线 */
+  phase?: boolean;
 }
 
 /**
@@ -141,6 +143,7 @@ export function formatEvent(event: GameEvent): EventLine {
         ...base,
         tone: to === 'GAME_OVER' ? 'success' : 'muted',
         text: `—— 第 ${event.day} 天 · ${label} ——`,
+        phase: true,
       };
     }
 

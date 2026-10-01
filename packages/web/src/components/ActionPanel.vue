@@ -9,6 +9,12 @@ const props = defineProps<{
   state: ClientState | null;
   connected: boolean;
   error: string | null;
+  /**
+   * 真人这手还剩多久（毫秒）；null 表示不在等真人。
+   * 服务端超时会代打，这条进度条就是「再不动手就替你动了」的明示。
+   */
+  actionLeftMs: number | null;
+  actionTotalMs: number;
 }>();
 
 const emit = defineEmits<{ send: [action: Action] }>();
@@ -37,6 +43,15 @@ const plainChoices = computed(() =>
   choices.value.filter((choice) => typeof (choice.action as { target?: unknown }).target !== 'number'),
 );
 
+/** 倒计时百分比（100 → 0）；低于三成换朱砂色 */
+const deadlinePct = computed(() => {
+  if (props.actionLeftMs === null || props.actionTotalMs <= 0) return null;
+  return Math.max(0, Math.min(100, (props.actionLeftMs / props.actionTotalMs) * 100));
+});
+const deadlineSeconds = computed(() =>
+  props.actionLeftMs === null ? null : Math.max(0, Math.ceil(props.actionLeftMs / 1000)),
+);
+
 watch(pending, () => {
   speech.value = '';
 });
@@ -52,6 +67,12 @@ function submitSpeech(): void {
 
 <template>
   <footer class="panel">
+    <!-- 真人行动倒计时：到点服务端会代打，不能让人死得不明不白 -->
+    <div v-if="deadlinePct !== null && mine && !frozen" class="deadline" :class="{ tight: deadlinePct < 30 }">
+      <div class="deadline-fill" :style="{ width: `${deadlinePct}%` }" />
+      <span class="deadline-text">{{ deadlineSeconds }}s</span>
+    </div>
+
     <div class="status">
       <template v-if="stopped">
         <span class="tag danger">本局已中止</span>
@@ -127,6 +148,40 @@ function submitSpeech(): void {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* 行动倒计时条：月光色，低于三成转朱砂 —— 不是装饰，是「要被代打了」的警告 */
+.deadline {
+  position: relative;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--ink-0);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.deadline-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent-dim) 0%, var(--accent) 100%);
+  transition: width 0.45s linear;
+}
+
+.deadline.tight .deadline-fill {
+  background: linear-gradient(90deg, #a33a32 0%, var(--danger) 100%);
+}
+
+.deadline-text {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
 }
 
 .status {

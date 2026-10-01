@@ -16,15 +16,63 @@ const box = ref<HTMLElement | null>(null);
  */
 const liveText = computed(() => (props.streaming?.text ?? '').replace(/\s*\n+\s*/g, ' '));
 
+/**
+ * 跨天升级：phase_changed 行在「天数变大」的那一条，从 muted 小字
+ * 升级成带左右饰线的天级分隔线 —— 不新增行，免得和原有阶段行重复。
+ */
+const decorated = computed(() =>
+  props.lines.map((line, index) => {
+    const prev = props.lines[index - 1];
+    const dayStart = line.phase === true && (index === 0 || line.day > (prev?.day ?? line.day));
+    return { line, dayStart };
+  }),
+);
+
+// ── 自动滚动：只有本来就贴着底部才跟随新事件 ──
+
+/** 用户是否贴在底部（往上翻过就暂停跟随） */
+const pinned = ref(true);
+/** 离开底部期间攒下的新事件条数 */
+const unseen = ref(0);
+
+function isAtBottom(): boolean {
+  const el = box.value;
+  if (!el) return true;
+  return el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+}
+
+function onScroll(): void {
+  pinned.value = isAtBottom();
+  if (pinned.value) unseen.value = 0;
+}
+
 function scrollToBottom(): void {
   void nextTick(() => {
-    if (box.value) box.value.scrollTop = box.value.scrollHeight;
+    const el = box.value;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    pinned.value = true;
+    unseen.value = 0;
   });
 }
 
-watch(() => props.lines.length, scrollToBottom);
-// 打字机每来一段就跟着滚，让最新吐出来的字始终可见
-watch(() => liveText.value.length, scrollToBottom);
+/** 新内容来了：贴底就跟着滚，没贴底就计数，别硬拽用户的阅读位置 */
+function onNewContent(): void {
+  if (pinned.value) {
+    void nextTick(() => {
+      const el = box.value;
+      if (el) el.scrollTop = el.scrollHeight;
+    });
+  } else {
+    unseen.value += 1;
+  }
+}
+
+watch(() => props.lines.length, onNewContent);
+// 打字机每来一段也跟着走（同样尊重用户的阅读位置）
+watch(() => liveText.value.length, () => {
+  if (pinned.value) onNewContent();
+});
 </script>
 
 <template>
@@ -34,28 +82,34 @@ watch(() => liveText.value.length, scrollToBottom);
       <span v-if="streaming" class="live-tag">发言生成中…</span>
       <span class="count">{{ lines.length }}</span>
     </header>
-    <div ref="box" class="log-body">
+    <div ref="box" class="log-body" @scroll.passive="onScroll">
       <div v-if="lines.length === 0 && !streaming" class="empty">还没有事件</div>
       <div
-        v-for="line in lines"
-        :key="line.key"
+        v-for="item in decorated"
+        :key="item.line.key"
         class="line"
-        :class="[line.tone, { speech: line.speech }]"
+        :class="[item.line.tone, { speech: item.line.speech, 'day-start': item.dayStart }]"
       >
-        <span class="seq">{{ line.key }}</span>
-        <span class="text">{{ line.text }}</span>
+        <span class="seq">{{ item.line.key }}</span>
+        <span class="text">{{ item.line.text }}</span>
       </div>
       <div v-if="streaming" class="line live speech">
         <span class="seq">✍</span>
         <span class="text">{{ streaming.seat }} 号：{{ liveText }}<i class="caret" /></span>
       </div>
     </div>
+
+    <!-- 往上翻历史时新事件不再硬拽回底部，浮一个按钮让人自己决定 -->
+    <button v-if="unseen > 0" class="new-pill" @click="scrollToBottom">
+      ↓ {{ unseen }} 条新事件
+    </button>
   </section>
 </template>
 
 <style scoped>
 /* 中间这块是整个界面最值得给面积的地方：文字局全靠读它 */
 .log {
+  position: relative;
   flex: 1 1 0;
   min-width: 0;
   min-height: 0;
@@ -176,6 +230,63 @@ watch(() => liveText.value.length, scrollToBottom);
 
 .line.live .text {
   color: #dfe5f5;
+}
+
+/*
+ * 天级分隔线：还是那条 phase_changed 行，但跨天时升级 —
+ * 序号列让位（透明），整行居中，左右拉两条饰线撑开一天的边界。
+ */
+.line.day-start {
+  margin: 8px 0 5px;
+  align-items: center;
+}
+
+.line.day-start .seq {
+  visibility: hidden;
+}
+
+.line.day-start .text {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-display);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--gold);
+  text-align: center;
+}
+
+.line.day-start .text::before,
+.line.day-start .text::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid rgba(217, 178, 106, 0.35);
+}
+
+/* 「↓ 新事件」浮钮：压在日志右下角，别盖住正文中间 */
+.new-pill {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  z-index: 2;
+  min-height: 0;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border-color: var(--accent-dim);
+  background: rgba(26, 32, 48, 0.94);
+  color: #b3c0ff;
+  font-size: 11.5px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  animation: pill-in 0.18s ease;
+}
+
+@keyframes pill-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
 }
 
 .caret {
